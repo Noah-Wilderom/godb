@@ -1,0 +1,30 @@
+version: '3'
+
+tasks:
+
+  tools:
+    desc: Install the Cobra command generator
+    cmds:
+      - go install github.com/spf13/cobra-cli@v1.3.0
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./... -race -v
+
+  build:
+    desc: Build the project
+    cmds:
+      - go build -o bin/godb ./cmd/godb
+
+  run:
+    desc: Run the project
+    deps:
+      - build
+    cmds:
+      - ./bin/godb {{.CLI_ARGS}}
+
+  bench:
+    desc: Run benchmarks
+    cmds:
+      - go test -run='^$' -bench=. -benchmem ./...
