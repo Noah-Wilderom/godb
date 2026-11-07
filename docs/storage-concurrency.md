@@ -32,6 +32,16 @@ state, and the entire state is discarded after the group. This reduces repeated
 decoding when a batch updates the same leaf. Entries are not reordered or
 coalesced: changing group boundaries does not change their application order.
 
+## Row insert plans
+
+`database.PlanRowInsert(table, row)` prepares a `RowInsertPlan` without opening a database, checking stored data, enqueueing work, or writing pages. `Primary` contains the encoded primary key and row; `Indexes` contains the secondary entries sorted by ascending index ID. Sorting does not change the caller's table. The plan retains each secondary entry's `RequiresUniqueCheck` flag.
+
+Every key/value pair is checked with the pager's `ValidateEntry`, including the complete key prefix, escaping, primary-key suffix, and primary-key reference value. The primary entry plus secondary entries must fit within `MaxBatchEntries`: currently at most 63 secondary indexes per insert. Definitions can declare more indexes, but this planner rejects them with `ErrBatchTooLarge`. Size errors preserve `pager.ErrPagerEntryTooLarge` through wrapping. Failures return a zero plan, even if earlier entries encoded successfully.
+
+The plan owns its buffers independently of the row, schema, and other entries. It is a mutable preparation result, not a transaction or proof that insertion will succeed. A future executor must check primary-key absence and unique-index conflicts inside the serialized write path, then maintain all entries atomically with crash recovery. Passing plan entries to the current `PutBatch` would bypass those checks and would not provide atomicity. Plans must also be tied to the schema version used during execution when schema versioning is added.
+
+This planner is for inserts. Updates and deletes need the old row to identify and remove stale index entries; they are not implemented here.
+
 ## Reads and shutdown
 
 `Get` takes a read lock and accesses the tree directly. It never goes through the
