@@ -10,7 +10,7 @@ type Pager struct {
 }
 
 func OpenPager(path string) (*Pager, error) {
-	file, err := os.OpenFile(path, os.O_RDWR, 0600)
+	file, err := os.OpenFile(path, os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -21,7 +21,7 @@ func OpenPager(path string) (*Pager, error) {
 }
 
 func CreatePager(path string) (*Pager, error) {
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err
 	}

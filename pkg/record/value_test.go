@@ -21,6 +21,7 @@ func TestValue_ConstructorsAndAccessors(t *testing.T) {
 		require.NoError(t, err)
 		return v
 	}
+
 	cases := []struct {
 		name  string
 		typ   Type
@@ -53,13 +54,16 @@ func TestValue_ConstructorsAndAccessors(t *testing.T) {
 			got, err := tc.read(tc.value)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
+
 			for _, other := range cases {
 				if other.typ == tc.typ {
 					continue
 				}
+
 				_, err := tc.read(other.value)
 				require.Error(t, err, "must reject %s", other.name)
 			}
+
 			for _, invalid := range []Value{NewNull(), {typ: tc.typ, data: nil}, {typ: tc.typ, data: struct{}{}}} {
 				_, err := tc.read(invalid)
 				require.Error(t, err)
@@ -76,9 +80,11 @@ func TestValue_NullAndEmptyValuesRemainDistinct(t *testing.T) {
 	require.NoError(t, err)
 	jsonNull, err := NewJSON([]byte("null"))
 	require.NoError(t, err)
+
 	for _, value := range []Value{text, jsonNull, NewBytes(nil), NewBytes([]byte{}), NewMap(nil), NewArray(nil), NewBool(false), NewInt64(0)} {
 		assert.False(t, value.IsNull())
 	}
+
 	nilBytes, err := NewBytes(nil).Bytes()
 	require.NoError(t, err)
 	assert.Nil(t, nilBytes)
@@ -127,12 +133,15 @@ func TestValue_BytesAndJSONOwnTheirData(t *testing.T) {
 		input := []byte(`{"a":1}`)
 		value := NewBytes(input)
 		read := Value.Bytes
+
 		if asJSON {
 			var err error
+
 			value, err = NewJSON(input)
 			require.NoError(t, err)
 			read = Value.JSON
 		}
+
 		input[0] = '!'
 		got, err := read(value)
 		require.NoError(t, err)

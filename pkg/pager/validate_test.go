@@ -49,15 +49,19 @@ func TestValidateInternal_PageCapacity(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			keys := make([][]byte, len(tc.lengths))
+
 			children := make([]uint64, len(keys)+1)
 			for i, length := range tc.lengths {
 				keys[i] = bytes.Repeat([]byte{byte('a' + i)}, length)
 			}
+
 			for i := range children {
 				children[i] = uint64(i + 1)
 			}
+
 			node, err := NewBPlusInternal(keys, children)
 			require.NoError(t, err)
+
 			err = ValidateInternal(node)
 			if tc.want == nil {
 				require.NoError(t, err)
@@ -72,14 +76,18 @@ func TestValidateInternal_ManySmallKeys(t *testing.T) {
 	for _, count := range []int{340, 341} {
 		keys := make([][]byte, count)
 		children := make([]uint64, count+1)
+
 		for i := range keys {
 			keys[i] = []byte{byte(i >> 8), byte(i)}
 		}
+
 		for i := range children {
 			children[i] = uint64(i + 1)
 		}
+
 		node, err := NewBPlusInternal(keys, children)
 		require.NoError(t, err)
+
 		if count == 340 {
 			require.NoError(t, ValidateInternal(node))
 		} else {

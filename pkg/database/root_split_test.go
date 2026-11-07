@@ -7,9 +7,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func rootSplitEntry(key string, valueSize int) testEntry {
@@ -40,6 +41,7 @@ func TestDatabase_PutAutomaticallySplitsRootLeaf(t *testing.T) {
 				binary.LittleEndian.PutUint64(initial[16:24], 2)
 				binary.LittleEndian.PutUint64(initial[24:32], 3)
 			}
+
 			oldCount := uint64(len(initial) / 4096)
 			path := writeDatabaseFixture(t, initial)
 			db, err := Open(path)
@@ -56,6 +58,7 @@ func TestDatabase_PutAutomaticallySplitsRootLeaf(t *testing.T) {
 			binary.LittleEndian.PutUint16(rootPage[1:3], uint16(len(tc.groups)-1))
 			binary.LittleEndian.PutUint64(rootPage[3:11], tc.root)
 			offset := 11
+
 			for i := 1; i < len(tc.groups); i++ {
 				children[i] = oldCount + uint64(i-1)
 				expected = append(expected, databaseBytesWithEntries(tc.groups[i])[4096:]...)
@@ -66,6 +69,7 @@ func TestDatabase_PutAutomaticallySplitsRootLeaf(t *testing.T) {
 				binary.LittleEndian.PutUint64(rootPage[offset:offset+8], children[i])
 				offset += 8
 			}
+
 			expected = append(expected, rootPage...)
 			newCount := oldCount + uint64(len(tc.groups))
 			binary.LittleEndian.PutUint64(expected[16:24], newCount-1)
@@ -73,6 +77,7 @@ func TestDatabase_PutAutomaticallySplitsRootLeaf(t *testing.T) {
 			assertFileContents(t, path, expected)
 			assert.Equal(t, newCount-1, db.header.RootPageID)
 			assert.Equal(t, newCount, db.header.PageCount)
+
 			for i, group := range tc.groups {
 				for _, entry := range group {
 					location, err := db.findLeaf(entry.key)
@@ -86,11 +91,13 @@ func TestDatabase_PutAutomaticallySplitsRootLeaf(t *testing.T) {
 					assert.True(t, bytes.Equal(entry.value, got))
 				}
 			}
+
 			require.NoError(t, db.Close())
 			require.NoError(t, Validate(path))
 			reopened, err := Open(path)
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
+
 			for _, group := range tc.groups {
 				for _, entry := range group {
 					got, found, err := reopened.Get(entry.key)
@@ -99,6 +106,7 @@ func TestDatabase_PutAutomaticallySplitsRootLeaf(t *testing.T) {
 					assert.True(t, bytes.Equal(entry.value, got))
 				}
 			}
+
 			got, found, err := reopened.Get([]byte("missing"))
 			require.NoError(t, err)
 			assert.False(t, found)
@@ -140,11 +148,13 @@ func TestDatabase_RootSplitHandlesOversizedParent(t *testing.T) {
 	require.NoError(t, db.Put(bytes.Repeat([]byte{'b'}, 4075), nil))
 	assert.Equal(t, uint64(6), db.header.RootPageID)
 	assert.Equal(t, uint64(7), db.header.PageCount)
+
 	for _, key := range [][]byte{[]byte("a"), bytes.Repeat([]byte{'b'}, 4075), bytes.Repeat([]byte{'c'}, 100)} {
 		_, found, err := db.Get(key)
 		require.NoError(t, err)
 		require.True(t, found)
 	}
+
 	require.NoError(t, Validate(path))
 }
 

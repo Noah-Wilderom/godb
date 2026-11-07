@@ -6,9 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 type treeSplitFixture struct {
@@ -29,15 +30,20 @@ func newTreeSplitFixture(t testing.TB, name string) treeSplitFixture {
 	leafPage := func(entries ...testEntry) []byte {
 		return databaseBytesWithEntries(entries)[4096:]
 	}
-	var pages [][]byte
-	var root, newRoot, newCount uint64
-	var updates []pageUpdate
-	var appended [][]byte
-	var entries []testEntry
-	var insert testEntry
+
+	var (
+		pages                   [][]byte
+		root, newRoot, newCount uint64
+		updates                 []pageUpdate
+		appended                [][]byte
+		entries                 []testEntry
+		insert                  testEntry
+	)
+
 	a := rootSplitEntry("a", 3000)
 	b := record(string(bytes.Repeat([]byte{'b'}, 2000)), "")
 	c := record(string(bytes.Repeat([]byte{'c'}, 3000)), "")
+
 	switch name {
 	case "RootLeaf":
 		a = rootSplitEntry("a", 2000)
@@ -59,13 +65,16 @@ func newTreeSplitFixture(t testing.TB, name string) treeSplitFixture {
 		root, newRoot, newCount = 7, 7, 9
 		pages = traversalPages(t)
 		insert = rootSplitEntry("cat", 4086)
+
 		for _, key := range []string{"ant", "bee", "cat", "catalog", "dog", "fox", "yak", "zebra"} {
 			entry := record(key, "value:"+key)
 			if key == "cat" {
 				entry = insert
 			}
+
 			entries = append(entries, entry)
 		}
+
 		updates = []pageUpdate{
 			{2, leafPage(insert)},
 			{5, traversalInternalPage(t, []string{"cat", "catalog"}, []uint64{1, 2, 8})},
@@ -90,6 +99,7 @@ func newTreeSplitFixture(t testing.TB, name string) treeSplitFixture {
 		if name == "CascadeToNewRoot" {
 			e = record(string(bytes.Repeat([]byte{'e'}, 3000)), "")
 		}
+
 		insert = b
 		root, newRoot, newCount = 6, 6, 9
 		pages = [][]byte{
@@ -100,6 +110,7 @@ func newTreeSplitFixture(t testing.TB, name string) treeSplitFixture {
 		}
 		entries = []testEntry{a, b, c, e}
 		updates = []pageUpdate{{1, leafPage(a)}, {4, traversalInternalPage(t, []string{string(b.key)}, []uint64{1, 7})}}
+
 		appended = [][]byte{leafPage(b), traversalInternalPage(t, nil, []uint64{2})}
 		if name == "GrandparentAbsorbs" {
 			updates = append(updates, pageUpdate{6, traversalInternalPage(t, []string{string(c.key), string(e.key)}, []uint64{4, 8, 5})})
@@ -125,6 +136,7 @@ func newTreeSplitFixture(t testing.TB, name string) treeSplitFixture {
 	default:
 		t.Fatalf("unknown fixture %q", name)
 	}
+
 	db, path := newTraversalDatabase(t, root, pages)
 	location, err := db.findLeaf(insert.key)
 	require.NoError(t, err)
@@ -151,6 +163,7 @@ func TestPrepareTreeSplit_PlansCompleteTreeWithoutWriting(t *testing.T) {
 			assert.Equal(t, headerBefore, *db.header)
 			assert.Equal(t, parentsBefore, fixture.location.parents)
 			assertFileContents(t, fixture.path, before)
+
 			for _, entry := range fixture.entries {
 				if value, _, found := fixture.location.leaf.Get(entry.key); found {
 					assert.True(t, bytes.Equal(entry.value, value))
@@ -159,6 +172,7 @@ func TestPrepareTreeSplit_PlansCompleteTreeWithoutWriting(t *testing.T) {
 
 			contents := bytes.Clone(before)
 			seen := make(map[uint64]bool)
+
 			for _, update := range plan.updates {
 				require.NotZero(t, update.pageID)
 				require.Less(t, update.pageID, headerBefore.PageCount)
@@ -167,33 +181,40 @@ func TestPrepareTreeSplit_PlansCompleteTreeWithoutWriting(t *testing.T) {
 				require.Len(t, update.page, 4096)
 				copy(contents[update.pageID*4096:], update.page)
 			}
+
 			for _, page := range plan.appendedPages {
 				require.Len(t, page, 4096)
 				contents = append(contents, page...)
 			}
+
 			headerPage, err := pager.EncodeHeader(&plan.header)
 			require.NoError(t, err)
 			copy(contents, headerPage)
 			require.Equal(t, plan.header.PageCount*4096, uint64(len(contents)))
 			resultPath := writeDatabaseFixture(t, contents)
 			require.NoError(t, Validate(resultPath))
+
 			for pass := 0; pass < 2; pass++ {
 				result, err := Open(resultPath)
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = result.Close() })
+
 				for i, entry := range fixture.entries {
 					value, found, err := result.Get(entry.key)
 					require.NoError(t, err)
 					require.True(t, found, "entry %d", i)
 					assert.True(t, bytes.Equal(entry.value, value), "entry %d", i)
 				}
+
 				for _, key := range [][]byte{nil, []byte("bb"), []byte("zz")} {
 					_, found, err := result.Get(key)
 					require.NoError(t, err)
 					assert.False(t, found)
 				}
+
 				require.NoError(t, result.Close())
 			}
+
 			again, err := db.prepareTreeSplit(fixture.location)
 			require.NoError(t, err)
 			assert.Equal(t, plan, again)
@@ -247,9 +268,11 @@ func TestPrepareTreeSplit_RejectsFailuresWithoutWriting(t *testing.T) {
 			tc.change(t, &fixture)
 			plan, err := fixture.db.prepareTreeSplit(fixture.location)
 			require.Error(t, err)
+
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
 			}
+
 			assert.Contains(t, err.Error(), tc.context)
 			assert.Nil(t, plan)
 			assert.Equal(t, headerBefore, *fixture.db.header)

@@ -7,13 +7,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func TestPrepareTreeSplit_MaximumSupportedPageCount(t *testing.T) {
 	const maximumPageCount = uint64(math.MaxInt64 / 4096)
+
 	header := pager.NewDatabaseHeader()
 	header.PageCount = maximumPageCount - 2
 	before := *header
@@ -35,12 +37,14 @@ func splitPlanFixture(t testing.TB, sizes []int) (*pager.BPlusLeaf, []testEntry)
 	t.Helper()
 	keys := make([][]byte, len(sizes))
 	values := make([][]byte, len(sizes))
+
 	entries := make([]testEntry, len(sizes))
 	for i, size := range sizes {
 		keys[i] = []byte{byte('a' + i)}
 		values[i] = bytes.Repeat([]byte{byte(i + 1)}, size)
 		entries[i] = testEntry{key: keys[i], value: values[i]}
 	}
+
 	leaf, err := pager.NewBPlusLeaf(keys, values)
 	require.NoError(t, err)
 	return leaf, entries
@@ -71,15 +75,18 @@ func TestPrepareLeafSplit_PagesAndSeparators(t *testing.T) {
 			require.NotNil(t, plan)
 			require.Len(t, plan.pages, len(tc.groups))
 			require.Len(t, plan.separators, len(tc.separators))
+
 			for i, want := range tc.separators {
 				assert.Equal(t, []byte(want), plan.separators[i])
 			}
+
 			start := 0
 			for i, count := range tc.groups {
 				expected := databaseBytesWithEntries(entries[start : start+count])[4096:]
 				assert.Equal(t, expected, plan.pages[i])
 				decoded, err := pager.DecodeLeaf(plan.pages[i])
 				require.NoError(t, err)
+
 				for j, entry := range entries {
 					got, _, found := decoded.Get(entry.key)
 					if j >= start && j < start+count {
@@ -89,9 +96,12 @@ func TestPrepareLeafSplit_PagesAndSeparators(t *testing.T) {
 						assert.False(t, found)
 					}
 				}
+
 				start += count
 			}
+
 			assert.Equal(t, len(entries), start)
+
 			for _, entry := range entries {
 				got, _, found := leaf.Get(entry.key)
 				require.True(t, found)
@@ -119,6 +129,7 @@ func TestPrepareLeafSplit_RejectsInvalidInputWithoutPartialPlan(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, plan)
 	})
+
 	cases := []struct {
 		name       string
 		key, value []byte
@@ -180,6 +191,7 @@ func TestPrepareTreeSplit_RootPositionsAndPageLayout(t *testing.T) {
 			for i := range pages {
 				pages[i] = traversalLeafPage(t, "original")
 			}
+
 			db, path := newTraversalDatabase(t, tc.root, pages)
 			before, err := os.ReadFile(path)
 			require.NoError(t, err)
@@ -216,19 +228,24 @@ func TestPrepareTreeSplit_RootPositionsAndPageLayout(t *testing.T) {
 			expectedRoot[0] = 2
 			binary.LittleEndian.PutUint16(expectedRoot[1:3], uint16(len(tc.groups)-1))
 			binary.LittleEndian.PutUint64(expectedRoot[3:11], tc.children[0])
+
 			start, offset := 0, 11
 			for i, count := range tc.groups {
 				assert.Equal(t, databaseBytesWithEntries(entries[start : start+count])[4096:], leafPages[i])
+
 				if i > 0 {
 					copy(expectedRoot[offset:offset+3], []byte{1, 0, entries[start].key[0]})
 					binary.LittleEndian.PutUint64(expectedRoot[offset+3:offset+11], tc.children[i])
 					offset += 11
 				}
+
 				start += count
 			}
+
 			assert.Equal(t, expectedRoot, rootPage)
 			root, err := pager.DecodeInternal(rootPage)
 			require.NoError(t, err)
+
 			start = 0
 			for i, count := range tc.groups {
 				for _, entry := range entries[start : start+count] {
@@ -237,8 +254,10 @@ func TestPrepareTreeSplit_RootPositionsAndPageLayout(t *testing.T) {
 					require.True(t, found)
 					assert.True(t, bytes.Equal(entry.value, value))
 				}
+
 				start += count
 			}
+
 			plan.header.RootPageID = 0
 			assert.Equal(t, headerBefore, *db.header)
 			assertFileContents(t, path, before)

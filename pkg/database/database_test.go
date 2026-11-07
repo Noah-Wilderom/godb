@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func TestCreate_WritesHeaderAndEmptyRootLeaf(t *testing.T) {
@@ -22,7 +23,7 @@ func TestCreate_WritesHeaderAndEmptyRootLeaf(t *testing.T) {
 	assert.Equal(t, validDatabaseBytes(), contents)
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	assert.Zero(t, info.Mode().Perm()&0077)
+	assert.Zero(t, info.Mode().Perm()&0o077)
 	file, err := pager.OpenPager(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, file.Close()) })
@@ -76,6 +77,7 @@ func TestOpen_RejectsInvalidPaths(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, db)
 	}
+
 	path := filepath.Join(t.TempDir(), "absent.db")
 	db, err := Open(path)
 	require.ErrorIs(t, err, os.ErrNotExist)
@@ -104,10 +106,12 @@ func TestOpen_RejectsInvalidDatabaseWithoutChangingContents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			contents := tc.change(validDatabaseBytes())
 			path := writeDatabaseFixture(t, contents)
+
 			db, err := Open(path)
 			if db != nil {
 				t.Cleanup(func() { _ = db.Close() })
 			}
+
 			require.Error(t, err)
 			assert.Nil(t, db)
 			assertFileContents(t, path, contents)
@@ -122,18 +126,21 @@ func TestDatabase_GetFindsVariableKeysAndEmptyValues(t *testing.T) {
 	db, err := Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
 	for _, entry := range entries {
 		value, found, err := db.Get(entry.key)
 		require.NoError(t, err)
 		require.True(t, found, "key %q", entry.key)
 		assert.True(t, bytes.Equal(entry.value, value))
 	}
+
 	for _, key := range []string{"1", "11", "3", "ca", "cats", "\xff\xff"} {
 		value, found, err := db.Get([]byte(key))
 		require.NoError(t, err)
 		assert.False(t, found)
 		assert.Nil(t, value)
 	}
+
 	value, found, err := db.Get([]byte("cat"))
 	require.NoError(t, err)
 	require.True(t, found)
@@ -149,6 +156,7 @@ func TestDatabase_GetWithManyEntries(t *testing.T) {
 	db, err := Open(writeDatabaseFixture(t, databaseBytesWithEntries(entries)))
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
 	for _, entry := range entries {
 		value, found, err := db.Get(entry.key)
 		require.NoError(t, err)
@@ -191,7 +199,7 @@ func TestDatabase_GetReturnsDecodeErrorAfterRootCorruption(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 	contents[4096] = 255
-	require.NoError(t, os.WriteFile(path, contents, 0600))
+	require.NoError(t, os.WriteFile(path, contents, 0o600))
 	value, found, err := db.Get([]byte("a"))
 	require.ErrorIs(t, err, pager.ErrPagerCorruptPage)
 	assert.False(t, found)
@@ -206,10 +214,10 @@ func TestDatabase_ClosePreventsReadsAndPreservesFile(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, db.Close())
 	value, found, err := db.Get([]byte("a"))
-	require.ErrorIs(t, err, os.ErrClosed)
+	require.ErrorIs(t, err, ErrClosed)
 	assert.False(t, found)
 	assert.Nil(t, value)
-	assert.ErrorIs(t, db.Close(), os.ErrClosed)
+	assert.NoError(t, db.Close())
 	assertFileContents(t, path, contents)
 	reopened, err := Open(path)
 	require.NoError(t, err)
@@ -229,6 +237,7 @@ func fixtureEntries(count int) []testEntry {
 	for i := range entries {
 		entries[i] = record(fmt.Sprintf("%04d", i*2), fmt.Sprintf("%04d", i+1000))
 	}
+
 	return entries
 }
 
@@ -236,6 +245,7 @@ func databaseBytesWithEntries(entries []testEntry) []byte {
 	contents := validDatabaseBytes()
 	root := contents[4096:]
 	binary.LittleEndian.PutUint16(root[1:3], uint16(len(entries)))
+
 	offset := 3
 	for _, entry := range entries {
 		binary.LittleEndian.PutUint16(root[offset:offset+2], uint16(len(entry.key)))
@@ -246,6 +256,7 @@ func databaseBytesWithEntries(entries []testEntry) []byte {
 		copy(root[offset:offset+len(entry.value)], entry.value)
 		offset += len(entry.value)
 	}
+
 	return contents
 }
 

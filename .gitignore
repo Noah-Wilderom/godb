@@ -1,3 +1,5 @@
 .zed/
 .DS_Store
 bin/
+# Added by goreleaser init:
+dist/

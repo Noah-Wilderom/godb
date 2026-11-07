@@ -39,6 +39,7 @@ func inspect(p *pager.Pager) (*pager.DatabaseHeader, error) {
 	}
 
 	expectedSize := header.PageCount * uint64(header.PageSize)
+
 	actualSize, err := p.GetFileSize()
 	if err != nil {
 		return nil, err

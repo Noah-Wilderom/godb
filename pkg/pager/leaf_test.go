@@ -14,12 +14,14 @@ func TestBPlusLeaf_Get(t *testing.T) {
 	values := byteStrings("empty key", "ten", "two", "", "longer value", "猫咪", "\x00\xff")
 	leaf, err := NewBPlusLeaf(keys, values)
 	require.NoError(t, err)
+
 	for i, key := range keys {
 		value, index, found := leaf.Get(key)
 		require.True(t, found, "key %q", key)
 		assert.Equal(t, i, index)
 		assert.True(t, bytes.Equal(values[i], value))
 	}
+
 	for _, key := range byteStrings("1", "11", "3", "ca", "cats", "\xff\xff") {
 		value, _, found := leaf.Get(key)
 		assert.False(t, found, "key %q", key)
@@ -55,6 +57,7 @@ func TestBPlusLeaf_FirstKey(t *testing.T) {
 			key, found := leaf.FirstKey()
 			assert.Equal(t, tc.found, found)
 			assert.True(t, bytes.Equal(tc.want, key))
+
 			if !found {
 				assert.Nil(t, key)
 			}
@@ -84,20 +87,25 @@ func TestBPlusLeaf_FirstKeyReturnsIndependentCopy(t *testing.T) {
 func TestBPlusLeaf_PutMaintainsByteOrderAndReplacesValues(t *testing.T) {
 	leaf, err := NewBPlusLeaf(nil, nil)
 	require.NoError(t, err)
+
 	for _, key := range byteStrings("cat", "2", "catalog", "10", "", "\x00", "\xff") {
 		leaf.Put(key, append([]byte("value:"), key...))
 	}
+
 	leaf.Put([]byte("cat"), []byte("replacement with a different length"))
 	expected := byteStrings("", "\x00", "10", "2", "cat", "catalog", "\xff")
 	assert.Equal(t, expected, leaf.keys)
+
 	for i, key := range expected {
 		value, index, found := leaf.Get(key)
 		require.True(t, found)
 		assert.Equal(t, i, index)
+
 		want := append([]byte("value:"), key...)
 		if string(key) == "cat" {
 			want = []byte("replacement with a different length")
 		}
+
 		assert.Equal(t, want, value)
 	}
 }
@@ -108,6 +116,7 @@ func TestBPlusLeaf_NilAndEmptyKeysAreEquivalent(t *testing.T) {
 	leaf.Put(nil, []byte("first"))
 	leaf.Put([]byte{}, nil)
 	require.Len(t, leaf.keys, 1)
+
 	for _, key := range [][]byte{nil, {}} {
 		value, _, found := leaf.Get(key)
 		assert.True(t, found)
@@ -191,6 +200,7 @@ func byteStrings(values ...string) [][]byte {
 	for i, value := range values {
 		result[i] = []byte(value)
 	}
+
 	return result
 }
 
@@ -200,6 +210,7 @@ func fixtureLeaf(count, valueSize int) *BPlusLeaf {
 		leaf.keys[i] = []byte(fmt.Sprintf("%04d", i))
 		leaf.values[i] = bytes.Repeat([]byte{byte(i)}, valueSize)
 	}
+
 	return leaf
 }
 
@@ -222,11 +233,13 @@ func TestBPlusLeaf_SplitPreservesEntriesAndFitsEveryPage(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			keys := make([][]byte, len(tc.valueSizes))
+
 			values := make([][]byte, len(tc.valueSizes))
 			for i, size := range tc.valueSizes {
 				keys[i] = []byte{byte('a' + i)}
 				values[i] = bytes.Repeat([]byte{byte(i + 1)}, size)
 			}
+
 			original, err := NewBPlusLeaf(keys, values)
 			require.NoError(t, err)
 
@@ -234,7 +247,9 @@ func TestBPlusLeaf_SplitPreservesEntriesAndFitsEveryPage(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Len(t, leaves, len(tc.groupCounts))
+
 			var allKeys, allValues [][]byte
+
 			for i, leaf := range leaves {
 				require.NotNil(t, leaf)
 				require.NotSame(t, original, leaf)
@@ -247,12 +262,15 @@ func TestBPlusLeaf_SplitPreservesEntriesAndFitsEveryPage(t *testing.T) {
 				allKeys = append(allKeys, leaf.keys...)
 				allValues = append(allValues, leaf.values...)
 			}
+
 			require.Len(t, allKeys, len(keys))
 			require.Len(t, allValues, len(values))
+
 			for i := range keys {
 				assert.Equal(t, keys[i], allKeys[i])
 				assert.Equal(t, values[i], allValues[i])
 			}
+
 			assert.Equal(t, keys, original.keys)
 			assert.Equal(t, values, original.values)
 		})
@@ -267,15 +285,18 @@ func TestBPlusLeaf_SplitHandlesManyEntries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, leaves, 3)
 	index := 0
+
 	for i, wantCount := range []int{511, 511, 178} {
 		require.Len(t, leaves[i].keys, wantCount)
 		require.NoError(t, ValidateLeaf(leaves[i]))
+
 		for j := range leaves[i].keys {
 			assert.Equal(t, original.keys[index], leaves[i].keys[j])
 			assert.Equal(t, original.values[index], leaves[i].values[j])
 			index++
 		}
 	}
+
 	assert.Equal(t, 1200, index)
 }
 
@@ -344,9 +365,11 @@ func TestBPlusLeaf_SplitRejectsInvalidInputWithoutPartialResults(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			leaves, err := tc.leaf.Split()
 			require.Error(t, err)
+
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
 			}
+
 			assert.Nil(t, leaves)
 		})
 	}

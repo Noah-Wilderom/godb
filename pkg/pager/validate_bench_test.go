@@ -9,11 +9,14 @@ func BenchmarkValidateInternal(b *testing.B) {
 	for _, count := range []int{0, 1, 16, 128, 226} {
 		b.Run(fmt.Sprintf("Keys%d", count), func(b *testing.B) {
 			keys, children := internalFixture(count)
+
 			node, err := NewBPlusInternal(keys, children)
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			b.ReportAllocs()
+
 			for b.Loop() {
 				if err := ValidateInternal(node); err != nil {
 					b.Fatal(err)

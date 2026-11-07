@@ -1,11 +1,46 @@
 version: '3'
 
-tasks:
+vars:
+  GOLANGCI_LINT_VERSION: v2.15.0
+  GOLANGCI_LINT: ./bin/golangci-lint
 
+tasks:
   tools:
-    desc: Install the Cobra command generator
+    desc: Install development tools
     cmds:
       - go install github.com/spf13/cobra-cli@v1.3.0
+      - task: tools:lint
+
+  tools:lint:
+    desc: Install the pinned golangci-lint binary
+    cmds:
+      - mkdir -p bin
+      - curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/{{.GOLANGCI_LINT_VERSION}}/install.sh -o bin/install-golangci-lint.sh
+      - sh bin/install-golangci-lint.sh -b ./bin {{.GOLANGCI_LINT_VERSION}}
+
+  fmt:
+    desc: Format Go code and organize imports
+    preconditions:
+      - sh: test -x {{.GOLANGCI_LINT}}
+        msg: Run task tools:lint first
+    cmds:
+      - '{{.GOLANGCI_LINT}} fmt ./...'
+
+  lint:
+    desc: Check Go code and formatting
+    preconditions:
+      - sh: test -x {{.GOLANGCI_LINT}}
+        msg: Run task tools:lint first
+    cmds:
+      - '{{.GOLANGCI_LINT}} run ./...'
+
+  lint:fix:
+    desc: Apply available lint fixes and formatting
+    preconditions:
+      - sh: test -x {{.GOLANGCI_LINT}}
+        msg: Run task tools:lint first
+    cmds:
+      - '{{.GOLANGCI_LINT}} run --fix ./...'
 
   test:
     desc: Run tests

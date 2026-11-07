@@ -7,9 +7,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func TestDatabase_PutSplitsNonRootLeafAndPreservesOtherBranches(t *testing.T) {
@@ -35,6 +36,7 @@ func TestDatabase_PutSplitsNonRootLeafAndPreservesOtherBranches(t *testing.T) {
 			if tc.initial != nil {
 				pages[tc.leafID-1] = databaseBytesWithEntries(tc.initial)[4096:]
 			}
+
 			fixture, path := newTraversalDatabase(t, 7, pages)
 			require.NoError(t, fixture.Close())
 			db, err := Open(path)
@@ -46,19 +48,23 @@ func TestDatabase_PutSplitsNonRootLeafAndPreservesOtherBranches(t *testing.T) {
 			expected := bytes.Clone(before)
 			copy(expected[int(tc.leafID)*4096:], databaseBytesWithEntries(tc.groups[0])[4096:])
 			copy(expected[int(tc.parentID)*4096:], traversalInternalPage(t, tc.parentKeys, tc.children))
+
 			for _, group := range tc.groups[1:] {
 				expected = append(expected, databaseBytesWithEntries(group)[4096:]...)
 			}
+
 			newCount := uint64(8 + len(tc.groups) - 1)
 			binary.LittleEndian.PutUint64(expected[24:32], newCount)
 			assertFileContents(t, path, expected)
 			assert.Equal(t, uint64(7), db.header.RootPageID)
 			assert.Equal(t, newCount, db.header.PageCount)
+
 			for i, group := range tc.groups {
 				wantID := tc.leafID
 				if i > 0 {
 					wantID = uint64(8 + i - 1)
 				}
+
 				for _, entry := range group {
 					location, err := db.findLeaf(entry.key)
 					require.NoError(t, err)
@@ -70,11 +76,13 @@ func TestDatabase_PutSplitsNonRootLeafAndPreservesOtherBranches(t *testing.T) {
 					assert.Equal(t, entry.value, value)
 				}
 			}
+
 			require.NoError(t, db.Close())
 			require.NoError(t, Validate(path))
 			reopened, err := Open(path)
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
+
 			for _, key := range []string{"ant", "bee", "cat", "catalog", "dog", "fox", "yak", "zebra", string(tc.update.key)} {
 				want := []byte("value:" + key)
 				for _, entry := range tc.initial {
@@ -82,9 +90,11 @@ func TestDatabase_PutSplitsNonRootLeafAndPreservesOtherBranches(t *testing.T) {
 						want = entry.value
 					}
 				}
+
 				if bytes.Equal(tc.update.key, []byte(key)) {
 					want = tc.update.value
 				}
+
 				value, found, err := reopened.Get([]byte(key))
 				require.NoError(t, err)
 				require.True(t, found, "key %q", key)
@@ -101,24 +111,31 @@ func TestDatabase_PutSupportsRepeatedLeafSplits(t *testing.T) {
 			db, err := Open(path)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = db.Close() })
+
 			for i := 0; i < 80; i++ {
 				index := i
-				if order == "Descending" {
+
+				switch order {
+				case "Descending":
 					index = 79 - i
-				} else if order == "Mixed" {
+				case "Mixed":
 					index = (i * 37) % 80
 				}
+
 				require.NoError(t, db.Put([]byte(fmt.Sprintf("%04d", index)), bytes.Repeat([]byte{byte(index)}, 1000)))
+
 				if i >= 4 {
 					assert.Equal(t, uint64(3), db.header.RootPageID)
 				}
 			}
+
 			assert.Greater(t, db.header.PageCount, uint64(4))
 			require.NoError(t, db.Close())
 			require.NoError(t, Validate(path))
 			reopened, err := Open(path)
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
+
 			for i := 0; i < 80; i++ {
 				value, found, err := reopened.Get([]byte(fmt.Sprintf("%04d", i)))
 				require.NoError(t, err)
@@ -143,11 +160,13 @@ func TestDatabase_NonRootSplitHandlesFullParent(t *testing.T) {
 	require.NoError(t, db.Put(bytes.Repeat([]byte{'b'}, 2000), nil))
 	assert.Equal(t, uint64(7), db.header.RootPageID)
 	assert.Equal(t, uint64(10), db.header.PageCount)
+
 	for _, key := range [][]byte{[]byte("a"), bytes.Repeat([]byte{'b'}, 2000), []byte(separator), []byte("dog"), []byte("fox"), []byte("yak"), []byte("zebra")} {
 		_, found, err := db.Get(key)
 		require.NoError(t, err)
 		require.True(t, found)
 	}
+
 	require.NoError(t, Validate(path))
 }
 

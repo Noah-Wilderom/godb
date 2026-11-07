@@ -9,11 +9,14 @@ func BenchmarkEncodeInternal(b *testing.B) {
 	for _, count := range []int{0, 1, 16, 128, 226} {
 		b.Run(fmt.Sprintf("Keys%d", count), func(b *testing.B) {
 			keys, children := internalFixture(count)
+
 			node, err := NewBPlusInternal(keys, children)
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			b.ReportAllocs()
+
 			for b.Loop() {
 				if _, err := EncodeInternal(node); err != nil {
 					b.Fatal(err)
@@ -27,11 +30,14 @@ func BenchmarkDecodeInternal(b *testing.B) {
 	for _, count := range []int{0, 1, 16, 128, 226} {
 		b.Run(fmt.Sprintf("Keys%d", count), func(b *testing.B) {
 			keys, children := internalFixture(count)
+
 			page, err := EncodeInternal(&BPlusInternal{keys: keys, children: children})
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			b.ReportAllocs()
+
 			for b.Loop() {
 				if _, err := DecodeInternal(page); err != nil {
 					b.Fatal(err)
@@ -63,10 +69,12 @@ func BenchmarkDecodeLeaf(b *testing.B) {
 	for _, count := range []int{0, 1, 128, 255} {
 		b.Run(fmt.Sprintf("Entries%d", count), func(b *testing.B) {
 			leaf := fixtureLeaf(count, 4)
+
 			page, err := EncodeLeaf(leaf)
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			b.ReportAllocs()
 
 			// Encoding above is setup. Each operation decodes and validates a
@@ -99,6 +107,7 @@ func BenchmarkDecodeHeader(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+
 	b.ReportAllocs()
 
 	// Setup encoding is excluded; every decode checks both reserved regions.

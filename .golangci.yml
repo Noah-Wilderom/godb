@@ -1,0 +1,59 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - embeddedstructfieldcheck
+    - grouper
+    - wsl_v5
+  settings:
+    embeddedstructfieldcheck:
+      empty-line: true
+    grouper:
+      const-require-grouping: true
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -ST1023
+        - -QF1011
+    wsl_v5:
+      default: none
+      allow-first-in-block: true
+      allow-whole-block: false
+      case-max-lines: 0
+      enable:
+        - err
+        - decl
+        - if
+        - for
+        - range
+        - switch
+        - type-switch
+        - after-block
+        - after-decl
+        - leading-whitespace
+        - trailing-whitespace
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gofumpt:
+      extra:
+        group-params: true
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/Noah-Wilderom/godb)
+      custom-order: true

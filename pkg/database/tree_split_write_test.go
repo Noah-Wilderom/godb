@@ -7,9 +7,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func TestDatabase_PutPersistsTreeSplits(t *testing.T) {
@@ -18,12 +19,15 @@ func TestDatabase_PutPersistsTreeSplits(t *testing.T) {
 			fixture := newTreeSplitFixture(t, name)
 			expected, err := os.ReadFile(fixture.path)
 			require.NoError(t, err)
+
 			for _, update := range fixture.want.updates {
 				copy(expected[update.pageID*4096:], update.page)
 			}
+
 			for _, page := range fixture.want.appendedPages {
 				expected = append(expected, page...)
 			}
+
 			headerPage, err := pager.EncodeHeader(&fixture.want.header)
 			require.NoError(t, err)
 			copy(expected, headerPage)
@@ -36,12 +40,14 @@ func TestDatabase_PutPersistsTreeSplits(t *testing.T) {
 			reopened, err := Open(fixture.path)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = reopened.Close() })
+
 			for i, entry := range fixture.entries {
 				value, found, err := reopened.Get(entry.key)
 				require.NoError(t, err)
 				require.True(t, found, "entry %d", i)
 				assert.True(t, bytes.Equal(entry.value, value), "entry %d", i)
 			}
+
 			require.NoError(t, reopened.Put(fixture.insert.key, []byte("updated")))
 			assert.Equal(t, fixture.want.header, *reopened.header)
 			require.NoError(t, reopened.Close())
@@ -63,30 +69,38 @@ func TestDatabase_PutRepeatedInternalSplits(t *testing.T) {
 			db, err := Open(path)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = db.Close() })
+
 			entries := make([]testEntry, 80)
 			for i := range entries {
 				key := append([]byte(fmt.Sprintf("%04d", i)), bytes.Repeat([]byte{'k'}, 996)...)
 				entries[i] = testEntry{key: key, value: bytes.Repeat([]byte{byte(i)}, 1000)}
 			}
+
 			inserted := make([]bool, len(entries))
 			for i := range entries {
 				index := i
-				if order == "Descending" {
+
+				switch order {
+				case "Descending":
 					index = len(entries) - 1 - i
-				} else if order == "Mixed" {
+				case "Mixed":
 					index = i * 37 % len(entries)
 				}
+
 				entry := entries[index]
 				require.NoError(t, db.Put(entry.key, entry.value))
 				inserted[index] = true
+
 				if (i+1)%10 == 0 {
 					require.NoError(t, db.Close())
 					db, err = Open(path)
 					require.NoError(t, err)
+
 					for j, present := range inserted {
 						if !present {
 							continue
 						}
+
 						value, found, err := db.Get(entries[j].key)
 						require.NoError(t, err)
 						require.True(t, found, "entry %d after insert %d", j, i)
@@ -94,6 +108,7 @@ func TestDatabase_PutRepeatedInternalSplits(t *testing.T) {
 					}
 				}
 			}
+
 			location, err := db.findLeaf(entries[0].key)
 			require.NoError(t, err)
 			assert.GreaterOrEqual(t, len(location.parents), 2, "must exercise internal splits")
@@ -102,14 +117,16 @@ func TestDatabase_PutRepeatedInternalSplits(t *testing.T) {
 	}
 }
 
-func TestApplyTreeSplit_RejectsPrewriteFailures(t *testing.T) {
+func TestWriteTreeSplit_RejectsPrewriteFailures(t *testing.T) {
 	for _, name := range []string{"InvalidRoot", "InvalidPageSize", "UnsupportedFormat", "PageCountTooLarge", "PartialExtraPage", "ExtraPage", "ClosedPager"} {
 		t.Run(name, func(t *testing.T) {
 			fixture := newTreeSplitFixture(t, "CascadeToNewRoot")
 			plan, err := fixture.db.prepareTreeSplit(fixture.location)
 			require.NoError(t, err)
 			headerBefore := *fixture.db.header
+
 			var want error
+
 			switch name {
 			case "InvalidRoot":
 				plan.header.RootPageID = plan.header.PageCount
@@ -129,13 +146,16 @@ func TestApplyTreeSplit_RejectsPrewriteFailures(t *testing.T) {
 				require.NoError(t, fixture.db.Close())
 				want = os.ErrClosed
 			}
+
 			before, err := os.ReadFile(fixture.path)
 			require.NoError(t, err)
-			err = fixture.db.applyTreeSplit(plan)
+			err = fixture.db.writeTreeSplit(plan)
 			require.Error(t, err)
+
 			if want != nil {
 				require.ErrorIs(t, err, want)
 			}
+
 			assert.Equal(t, headerBefore, *fixture.db.header)
 			assertFileContents(t, fixture.path, before)
 		})

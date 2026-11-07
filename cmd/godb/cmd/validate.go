@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/Noah-Wilderom/godb/pkg/database"
 	"github.com/spf13/cobra"
+
+	"github.com/Noah-Wilderom/godb/pkg/database"
 )
 
 var validateCmd = &cobra.Command{

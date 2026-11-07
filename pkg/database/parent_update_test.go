@@ -5,9 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func TestPrepareTreeSplit_PreservesSiblingsAndSelectsImmediateParent(t *testing.T) {

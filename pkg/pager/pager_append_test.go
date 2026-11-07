@@ -16,6 +16,7 @@ func TestPager_AppendPageUsesNextIDAndPreservesExistingPages(t *testing.T) {
 		t.Run(fmt.Sprintf("ExistingPages%d", existingCount), func(t *testing.T) {
 			expected := bytes.Repeat([]byte{0x11}, existingCount*4096)
 			p := newPagerForReadTest(t, expected)
+
 			for i := 0; i < 3; i++ {
 				page := bytes.Repeat([]byte{byte(0x22 + i)}, 4096)
 				original := bytes.Clone(page)
@@ -69,7 +70,7 @@ func TestPager_AppendPageRejectsPartialFileWithoutChangingIt(t *testing.T) {
 func TestPager_AppendPageWithClosedFileReturnsError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")
 	expected := bytes.Repeat([]byte{0x11}, 8192)
-	require.NoError(t, os.WriteFile(path, expected, 0600))
+	require.NoError(t, os.WriteFile(path, expected, 0o600))
 	p, err := OpenPager(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = p.Close() })
@@ -85,14 +86,16 @@ func TestPager_AppendPageWithClosedFileReturnsError(t *testing.T) {
 func TestPager_AppendPageWithReadOnlyFileReturnsWriteError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")
 	expected := bytes.Repeat([]byte{0x11}, 8192)
-	require.NoError(t, os.WriteFile(path, expected, 0600))
+	require.NoError(t, os.WriteFile(path, expected, 0o600))
 	file, err := os.Open(path)
 	require.NoError(t, err)
 	p := &Pager{file: file}
 	t.Cleanup(func() { assert.NoError(t, p.Close()) })
 	id, err := p.AppendPage(make([]byte, 4096))
 	require.Error(t, err)
+
 	var pathErr *os.PathError
+
 	require.ErrorAs(t, err, &pathErr)
 	assert.Equal(t, "write", pathErr.Op)
 	assert.Zero(t, id)

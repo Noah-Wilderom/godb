@@ -16,12 +16,8 @@ func ValidateLeaf(leaf *BPlusLeaf) error {
 	}
 
 	for i := range leaf.keys {
-		if len(leaf.keys[i]) > maxKeySize {
-			return fmt.Errorf("entry %d: key exceeds maximum payload size: %w", i, ErrPagerEntryTooLarge)
-		}
-
-		if len(leaf.values[i]) > maxEntryPayload-len(leaf.keys[i]) {
-			return fmt.Errorf("entry %d: key and value exceed page capacity: %w", i, ErrPagerEntryTooLarge)
+		if err := ValidateEntry(leaf.keys[i], leaf.values[i]); err != nil {
+			return fmt.Errorf("entry %d: %w", i, err)
 		}
 	}
 
@@ -30,17 +26,32 @@ func ValidateLeaf(leaf *BPlusLeaf) error {
 		if remainingSpace < leafEntryHeaderSize {
 			return fmt.Errorf("entry %d: not enough space for entry header: %w", i, ErrPagerPageFull)
 		}
+
 		remainingSpace -= leafEntryHeaderSize
 
 		if remainingSpace < len(leaf.keys[i]) {
 			return fmt.Errorf("entry %d: key does not fit: %w", i, ErrPagerPageFull)
 		}
+
 		remainingSpace -= len(leaf.keys[i])
 
 		if remainingSpace < len(leaf.values[i]) {
 			return fmt.Errorf("entry %d: value does not fit: %w", i, ErrPagerPageFull)
 		}
+
 		remainingSpace -= len(leaf.values[i])
+	}
+
+	return nil
+}
+
+func ValidateEntry(key, value []byte) error {
+	if len(key) > maxKeySize {
+		return fmt.Errorf("key exceeds maximum payload size: %w", ErrPagerEntryTooLarge)
+	}
+
+	if len(value) > maxEntryPayload-len(key) {
+		return fmt.Errorf("key and value exceed page capacity: %w", ErrPagerEntryTooLarge)
 	}
 
 	return nil
@@ -72,7 +83,7 @@ func ValidateHeader(header *DatabaseHeader) error {
 	}
 
 	if header.PageCount > maxPageID+1 {
-		return fmt.Errorf("page count must not exceed %d", maxPageID+1)
+		return fmt.Errorf("page count must not exceed %d", uint64(maxPageID+1))
 	}
 
 	if header.RootPageID == 0 || header.RootPageID >= header.PageCount {
@@ -88,6 +99,7 @@ func validateKeyOrder(keys [][]byte) error {
 			return fmt.Errorf("keys must be sorted in strictly ascending order: %w", ErrPagerInvalidArgument)
 		}
 	}
+
 	return nil
 }
 
@@ -105,6 +117,7 @@ func validateInternalEntries(keys [][]byte, children []uint64) error {
 		if _, exists := seen[children[i]]; exists {
 			return ErrPagerInvalidInternalNode
 		}
+
 		seen[children[i]] = struct{}{}
 
 		if children[i] > maxPageID || children[i] == 0 {

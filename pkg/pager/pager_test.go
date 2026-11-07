@@ -23,13 +23,13 @@ func TestCreatePager_WithMissingFileCreatesEmptyFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, info.Size())
 	assert.True(t, info.Mode().IsRegular())
-	assert.Zero(t, info.Mode().Perm()&0077, "new files should not grant group or other permissions")
+	assert.Zero(t, info.Mode().Perm()&0o077, "new files should not grant group or other permissions")
 }
 
 func TestOpenPager_WithExistingFilePreservesContents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")
 	expected := bytes.Repeat([]byte{0x12, 0x34, 0x56, 0x78}, 1024)
-	require.NoError(t, os.WriteFile(path, expected, 0600))
+	require.NoError(t, os.WriteFile(path, expected, 0o600))
 
 	pager, err := OpenPager(path)
 
@@ -52,7 +52,7 @@ func TestOpenPager_WithMissingParentDirectoryReturnsError(t *testing.T) {
 func TestPager_CloseClosesFileAndPreservesContents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")
 	expected := bytes.Repeat([]byte{0x42}, 4096)
-	require.NoError(t, os.WriteFile(path, expected, 0600))
+	require.NoError(t, os.WriteFile(path, expected, 0o600))
 	pager, err := OpenPager(path)
 	require.NoError(t, err)
 	// Best-effort cleanup if an assertion exits before the explicit close.
@@ -141,6 +141,7 @@ func TestPager_ReadPageWithPartialFinalPagePreservesCompletePage(t *testing.T) {
 func TestPager_ReadPageWithUnsupportedIDReturnsError(t *testing.T) {
 	// Page zero exists, so a wrapped offset of zero must not succeed.
 	pager := newPagerForReadTest(t, bytes.Repeat([]byte{0x11}, 4096))
+
 	cases := []struct {
 		name   string
 		pageID uint64
@@ -162,7 +163,7 @@ func TestPager_ReadPageWithUnsupportedIDReturnsError(t *testing.T) {
 
 func TestPager_ReadPageWithClosedFileReturnsError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")
-	require.NoError(t, os.WriteFile(path, make([]byte, 4096), 0600))
+	require.NoError(t, os.WriteFile(path, make([]byte, 4096), 0o600))
 	pager, err := OpenPager(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pager.file.Close() })
@@ -195,7 +196,7 @@ func TestPager_ReadPageReturnsIndependentBuffers(t *testing.T) {
 func newPagerForReadTest(t *testing.T, contents []byte) *Pager {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "database.db")
-	require.NoError(t, os.WriteFile(path, contents, 0600))
+	require.NoError(t, os.WriteFile(path, contents, 0o600))
 	pager, err := OpenPager(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, pager.Close()) })
@@ -216,7 +217,7 @@ func TestOpenPager_WithMissingFileReturnsErrorWithoutCreatingFile(t *testing.T) 
 func TestCreatePager_WithExistingFilePreservesContents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")
 	expected := []byte("existing database contents")
-	require.NoError(t, os.WriteFile(path, expected, 0600))
+	require.NoError(t, os.WriteFile(path, expected, 0o600))
 
 	pager, err := CreatePager(path)
 

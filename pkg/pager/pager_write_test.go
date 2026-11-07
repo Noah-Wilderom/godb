@@ -114,7 +114,7 @@ func TestPager_WritePageWithUnsupportedIDLeavesFileUnchanged(t *testing.T) {
 func TestPager_WritePageWithClosedFileReturnsError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")
 	expected := bytes.Repeat([]byte{0x11}, 4096)
-	require.NoError(t, os.WriteFile(path, expected, 0600))
+	require.NoError(t, os.WriteFile(path, expected, 0o600))
 	pager, err := OpenPager(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pager.file.Close() })
@@ -157,6 +157,7 @@ func TestPager_WriteEncodedLeafCanBeDecodedAfterReopening(t *testing.T) {
 	assert.Equal(t, page, storedPage)
 	assert.Equal(t, original.keys, decoded.keys)
 	assert.Equal(t, original.values, decoded.values)
+
 	for i, key := range original.keys {
 		value, idx, found := decoded.Get(key)
 		assert.True(t, found)

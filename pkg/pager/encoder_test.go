@@ -69,9 +69,11 @@ func TestInternalEncoding_RoundTrip(t *testing.T) {
 			node, err := DecodeInternal(page)
 			require.NoError(t, err)
 			require.Len(t, node.keys, len(tc.keys))
+
 			for i := range tc.keys {
 				assert.True(t, bytes.Equal(tc.keys[i], node.keys[i]))
 			}
+
 			assert.Equal(t, tc.children, node.children)
 			encoded, err := EncodeInternal(node)
 			require.NoError(t, err)
@@ -83,16 +85,19 @@ func TestInternalEncoding_RoundTrip(t *testing.T) {
 func TestDecodeInternal_MultibyteCount(t *testing.T) {
 	page := make([]byte, 4096)
 	copy(page, []byte{2, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0})
+
 	for i := 0; i < 256; i++ {
 		start := 11 + i*11
 		copy(page[start:], []byte{1, 0, byte(i)})
 		binary.LittleEndian.PutUint64(page[start+3:start+11], uint64(i+2))
 	}
+
 	node, err := DecodeInternal(page)
 	require.NoError(t, err)
 	require.Len(t, node.keys, 256)
 	require.Len(t, node.children, 257)
 	assert.Equal(t, uint64(1), node.children[0])
+
 	for i := range node.keys {
 		assert.Equal(t, []byte{byte(i)}, node.keys[i])
 		assert.Equal(t, uint64(i+2), node.children[i+1])
@@ -165,6 +170,7 @@ func TestDecodeInternal_IgnoresUnusedPadding(t *testing.T) {
 	for i := 37; i < len(page); i++ {
 		page[i] = 0xff
 	}
+
 	node, err := DecodeInternal(page)
 	require.NoError(t, err)
 	assert.Equal(t, byteStrings("cat", "dog"), node.keys)
@@ -207,22 +213,27 @@ func TestEncodeInternal_MultibyteLengthAndChildID(t *testing.T) {
 func TestEncodeInternal_MultibyteCount(t *testing.T) {
 	keys := make([][]byte, 256)
 	children := make([]uint64, 257)
+
 	for i := range keys {
 		keys[i] = []byte{byte(i)}
 	}
+
 	for i := range children {
 		children[i] = uint64(i + 1)
 	}
+
 	page, err := EncodeInternal(&BPlusInternal{keys: keys, children: children})
 	require.NoError(t, err)
 	require.Len(t, page, 4096)
 	assert.Equal(t, []byte{2, 0, 1}, page[:3])
 	assert.Equal(t, uint64(1), binary.LittleEndian.Uint64(page[3:11]))
+
 	for i := range keys {
 		start := 11 + i*11
 		assert.Equal(t, []byte{1, 0, byte(i)}, page[start:start+3])
 		assert.Equal(t, children[i+1], binary.LittleEndian.Uint64(page[start+3:start+11]))
 	}
+
 	assert.Equal(t, make([]byte, 4096-2827), page[2827:])
 }
 
@@ -321,6 +332,7 @@ func TestLeafEncoding_EmptyLeafAndEmptyEntry(t *testing.T) {
 		decoded, err := DecodeLeaf(page)
 		require.NoError(t, err)
 		require.Len(t, decoded.keys, len(leaf.keys))
+
 		if len(leaf.keys) != 0 {
 			value, _, found := decoded.Get(nil)
 			assert.True(t, found)
@@ -342,6 +354,7 @@ func TestLeafEncoding_RoundTrip(t *testing.T) {
 			assert.Equal(t, original.values, decoded.values)
 		})
 	}
+
 	original := &BPlusLeaf{keys: byteStrings("", "a", "ab", "猫", "\xff"), values: byteStrings("", "\x00\xff", "different length", "🐈", "last")}
 	page, err := EncodeLeaf(original)
 	require.NoError(t, err)
@@ -364,7 +377,8 @@ func TestLeafEncoding_ExactPageFit(t *testing.T) {
 }
 
 func TestEncodeLeaf_RejectsInvalidLeaves(t *testing.T) {
-	for _, leaf := range []*BPlusLeaf{nil,
+	for _, leaf := range []*BPlusLeaf{
+		nil,
 		{keys: byteStrings("a"), values: nil},
 		{keys: byteStrings("b", "a"), values: byteStrings("", "")},
 		{keys: byteStrings("a", "a"), values: byteStrings("", "")},
@@ -373,6 +387,7 @@ func TestEncodeLeaf_RejectsInvalidLeaves(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, page)
 	}
+
 	for _, tc := range []struct {
 		leaf *BPlusLeaf
 		want error
@@ -394,6 +409,7 @@ func TestDecodeLeaf_RejectsIncorrectPageSize(t *testing.T) {
 			assert.Nil(t, leaf)
 		})
 	}
+
 	leaf, err := DecodeLeaf(nil)
 	require.ErrorIs(t, err, ErrPagerCorruptPage)
 	assert.Nil(t, leaf)
@@ -426,7 +442,9 @@ func TestDecodeLeaf_RejectsCorruption(t *testing.T) {
 			leaf, err := DecodeLeaf(page)
 			require.ErrorIs(t, err, ErrPagerCorruptPage)
 			assert.Nil(t, leaf)
+
 			var typed *Error
+
 			require.ErrorAs(t, err, &typed)
 			assert.Equal(t, CodePagerCorruptPage, typed.Code)
 		})
@@ -625,6 +643,7 @@ func TestDecodeHeaderWithNonzeroReservedBytesReturnsError(t *testing.T) {
 				require.Error(t, err, "reserved byte %d = %02x", offset, value)
 				require.Nil(t, header, "reserved byte %d = %02x", offset, value)
 			}
+
 			page[offset] = 0
 		}
 	}

@@ -11,13 +11,16 @@ import (
 func internalSplitFixture(t testing.TB, sizes []int) *BPlusInternal {
 	t.Helper()
 	keys := make([][]byte, len(sizes))
+
 	children := make([]uint64, len(sizes)+1)
 	for i, size := range sizes {
 		keys[i] = bytes.Repeat([]byte{byte('a' + i)}, size)
 	}
+
 	for i := range children {
 		children[i] = uint64(100 + i)
 	}
+
 	node, err := NewBPlusInternal(keys, children)
 	require.NoError(t, err)
 	return node
@@ -52,6 +55,7 @@ func TestBPlusInternal_Split(t *testing.T) {
 			assert.Equal(t, before, node)
 
 			start := 0
+
 			parentChildren := make([]uint64, len(nodes))
 			for i, part := range nodes {
 				end := len(node.keys)
@@ -59,6 +63,7 @@ func TestBPlusInternal_Split(t *testing.T) {
 					end = tc.promoted[i]
 					assert.Equal(t, node.keys[end], separators[i])
 				}
+
 				assert.Equal(t, node.keys[start:end], part.keys)
 				assert.Equal(t, node.children[start:end+1], part.children)
 				require.NoError(t, ValidateInternal(part))
@@ -73,10 +78,12 @@ func TestBPlusInternal_Split(t *testing.T) {
 
 			parent, err := NewBPlusInternal(separators, parentChildren)
 			require.NoError(t, err)
+
 			queries := [][]byte{nil, {0xff}}
 			for _, key := range node.keys {
 				queries = append(queries, key, append(bytes.Clone(key), 0))
 			}
+
 			for i, query := range queries {
 				part := nodes[parent.ChildFor(query)-1]
 				assert.Equal(t, node.ChildFor(query), part.ChildFor(query), "query %d", i)
@@ -92,18 +99,23 @@ func TestBPlusInternal_SplitOwnsData(t *testing.T) {
 		require.NoError(t, err)
 		nodes, separators, err := node.Split()
 		require.NoError(t, err)
+
 		for _, part := range nodes {
 			for _, key := range part.keys {
 				key[0] ^= 0xff
 			}
+
 			if len(part.keys) > 0 {
 				part.keys[0] = []byte("replacement")
 			}
+
 			part.children[0] = 999
 		}
+
 		for _, key := range separators {
 			key[0] ^= 0xff
 		}
+
 		assert.Equal(t, before, node)
 	}
 }

@@ -7,9 +7,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func TestDatabase_PutThroughInternalNodesChangesOnlyTargetLeaf(t *testing.T) {
@@ -42,6 +43,7 @@ func TestDatabase_PutThroughInternalNodesChangesOnlyTargetLeaf(t *testing.T) {
 			after, err := os.ReadFile(path)
 			require.NoError(t, err)
 			require.Len(t, after, len(before))
+
 			for pageID := 0; pageID < 8; pageID++ {
 				start, end := pageID*4096, (pageID+1)*4096
 				if pageID == tc.pageID {
@@ -55,6 +57,7 @@ func TestDatabase_PutThroughInternalNodesChangesOnlyTargetLeaf(t *testing.T) {
 					assert.Equal(t, before[start:end], after[start:end], "page %d", pageID)
 				}
 			}
+
 			assert.Equal(t, uint64(7), db.header.RootPageID)
 			assert.Equal(t, uint64(8), db.header.PageCount)
 			require.NoError(t, db.Close())
@@ -62,11 +65,13 @@ func TestDatabase_PutThroughInternalNodesChangesOnlyTargetLeaf(t *testing.T) {
 			reopened, err := Open(path)
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
+
 			for _, key := range []string{"ant", "bee", "cat", "catalog", "dog", "fox", "yak", "zebra", tc.key} {
 				want := []byte("value:" + key)
 				if key == tc.key {
 					want = value
 				}
+
 				got, found, err := reopened.Get([]byte(key))
 				require.NoError(t, err)
 				require.True(t, found, "key %q", key)
@@ -100,6 +105,7 @@ func TestDatabase_PutThroughInternalNodesPreservesFileOnEncodingFailure(t *testi
 			assert.Equal(t, headerBefore, *db.header)
 			got, found, err := db.Get(tc.key)
 			require.NoError(t, err)
+
 			if bytes.Equal(tc.key, []byte("cat")) {
 				require.True(t, found)
 				assert.Equal(t, []byte("value:cat"), got)
@@ -132,6 +138,7 @@ func TestDatabase_PutInsertsAndReplacesEntriesAfterReopening(t *testing.T) {
 	db, err := Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+
 	writes := []testEntry{record("cat", "animal"), record("2", "two"), record("10", "ten"), record("", "empty key"), record("猫", "🐈"), record("\xff", "\x00\xff"), record("cat", "a longer replacement"), record("2", "")}
 	for _, entry := range writes {
 		require.NoError(t, db.Put(entry.key, entry.value))
@@ -140,6 +147,7 @@ func TestDatabase_PutInsertsAndReplacesEntriesAfterReopening(t *testing.T) {
 		assert.True(t, found)
 		assert.True(t, bytes.Equal(entry.value, value))
 	}
+
 	require.NoError(t, db.Close())
 	expected := []testEntry{record("", "empty key"), record("10", "ten"), record("2", ""), record("cat", "a longer replacement"), record("猫", "🐈"), record("\xff", "\x00\xff")}
 	assertFileContents(t, path, databaseBytesWithEntries(expected))
@@ -147,6 +155,7 @@ func TestDatabase_PutInsertsAndReplacesEntriesAfterReopening(t *testing.T) {
 	reopened, err := Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
+
 	for _, entry := range expected {
 		value, found, err := reopened.Get(entry.key)
 		require.NoError(t, err)
@@ -223,6 +232,7 @@ func TestDatabase_PutOversizedKeyOrValuePreservesFile(t *testing.T) {
 	db, err := Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
 	for _, entry := range []testEntry{{make([]byte, 4090), nil}, {nil, make([]byte, 4090)}} {
 		require.ErrorIs(t, db.Put(entry.key, entry.value), pager.ErrPagerEntryTooLarge)
 		assertFileContents(t, path, contents)
@@ -253,7 +263,7 @@ func TestDatabase_PutAfterClosePreservesFile(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, db.Close())
-	require.ErrorIs(t, db.Put([]byte("a"), nil), os.ErrClosed)
+	require.ErrorIs(t, db.Put([]byte("a"), nil), ErrClosed)
 	assertFileContents(t, path, contents)
 }
 
@@ -275,7 +285,7 @@ func TestDatabase_PutWithCorruptedRootPreservesFile(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 	contents[4096] = 255
-	require.NoError(t, os.WriteFile(path, contents, 0600))
+	require.NoError(t, os.WriteFile(path, contents, 0o600))
 	require.ErrorIs(t, db.Put([]byte("a"), nil), pager.ErrPagerCorruptPage)
 	assertFileContents(t, path, contents)
 }

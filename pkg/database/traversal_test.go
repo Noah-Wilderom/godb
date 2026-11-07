@@ -7,19 +7,22 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Noah-Wilderom/godb/pkg/pager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 func traversalLeafPage(t testing.TB, keys ...string) []byte {
 	t.Helper()
 	keyBytes := make([][]byte, len(keys))
+
 	values := make([][]byte, len(keys))
 	for i, key := range keys {
 		keyBytes[i] = []byte(key)
 		values[i] = []byte("value:" + key)
 	}
+
 	leaf, err := pager.NewBPlusLeaf(keyBytes, values)
 	require.NoError(t, err)
 	page, err := pager.EncodeLeaf(leaf)
@@ -29,10 +32,12 @@ func traversalLeafPage(t testing.TB, keys ...string) []byte {
 
 func traversalInternalPage(t testing.TB, keys []string, children []uint64) []byte {
 	t.Helper()
+
 	keyBytes := make([][]byte, len(keys))
 	for i, key := range keys {
 		keyBytes[i] = []byte(key)
 	}
+
 	node, err := pager.NewBPlusInternal(keyBytes, children)
 	require.NoError(t, err)
 	page, err := pager.EncodeInternal(node)
@@ -60,14 +65,16 @@ func newTraversalDatabase(t testing.TB, root uint64, pages [][]byte) (*Database,
 	header.PageCount = uint64(len(pages) + 1)
 	contents, err := pager.EncodeHeader(header)
 	require.NoError(t, err)
+
 	for _, page := range pages {
 		require.Len(t, page, 4096)
 		contents = append(contents, page...)
 	}
+
 	path := writeDatabaseFixture(t, contents)
 	p, err := pager.OpenPager(path)
 	require.NoError(t, err)
-	db := &Database{pager: p, header: header}
+	db := newDatabase(p, header)
 	t.Cleanup(func() { _ = db.Close() })
 	return db, path
 }
@@ -90,28 +97,33 @@ func TestDatabase_OpenAndGetThroughInternalRoots(t *testing.T) {
 			original, err := os.ReadFile(path)
 			require.NoError(t, err)
 			require.NoError(t, Validate(path))
+
 			for pass := 0; pass < 2; pass++ {
 				db, err := Open(path)
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = db.Close() })
+
 				for _, key := range tc.present {
 					value, found, err := db.Get([]byte(key))
 					require.NoError(t, err)
 					require.True(t, found, "key %q", key)
 					assert.Equal(t, []byte("value:"+key), value)
 				}
+
 				for _, key := range tc.missing {
 					value, found, err := db.Get([]byte(key))
 					require.NoError(t, err)
 					assert.False(t, found, "key %q", key)
 					assert.Nil(t, value)
 				}
+
 				value, found, err := db.Get(nil)
 				require.NoError(t, err)
 				assert.False(t, found)
 				assert.Nil(t, value)
 				require.NoError(t, db.Close())
 			}
+
 			assertFileContents(t, path, original)
 		})
 	}
@@ -135,10 +147,12 @@ func TestOpenAndValidate_RejectMalformedInternalRoot(t *testing.T) {
 			fixture, path := newTraversalDatabase(t, 7, pages)
 			require.NoError(t, fixture.Close())
 			require.ErrorIs(t, Validate(path), pager.ErrPagerCorruptPage)
+
 			db, err := Open(path)
 			if db != nil {
 				t.Cleanup(func() { _ = db.Close() })
 			}
+
 			require.ErrorIs(t, err, pager.ErrPagerCorruptPage)
 			assert.Nil(t, db)
 		})
@@ -179,15 +193,25 @@ func TestDatabase_FindLeafTraversesMultipleLevels(t *testing.T) {
 	db, path := newTraversalDatabase(t, 7, traversalPages(t))
 	original, err := os.ReadFile(path)
 	require.NoError(t, err)
+
 	cases := []struct {
 		key    string
 		pageID uint64
 		found  bool
 	}{
-		{"", 1, false}, {"ant", 1, true}, {"bee", 1, true}, {"car", 1, false},
-		{"cat", 2, true}, {"catalog", 2, true}, {"cow", 2, false},
-		{"dog", 3, true}, {"fox", 3, true}, {"wolf", 3, false},
-		{"yak", 4, true}, {"zebra", 4, true}, {"zz", 4, false},
+		{"", 1, false},
+		{"ant", 1, true},
+		{"bee", 1, true},
+		{"car", 1, false},
+		{"cat", 2, true},
+		{"catalog", 2, true},
+		{"cow", 2, false},
+		{"dog", 3, true},
+		{"fox", 3, true},
+		{"wolf", 3, false},
+		{"yak", 4, true},
+		{"zebra", 4, true},
+		{"zz", 4, false},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("Key_%q", tc.key), func(t *testing.T) {
@@ -196,13 +220,16 @@ func TestDatabase_FindLeafTraversesMultipleLevels(t *testing.T) {
 			require.NotNil(t, location)
 			require.NotNil(t, location.leaf)
 			assert.Equal(t, tc.pageID, location.pageID)
+
 			if tc.pageID <= 2 {
 				assert.Equal(t, []uint64{7, 5}, location.parents)
 			} else {
 				assert.Equal(t, []uint64{7, 6}, location.parents)
 			}
+
 			value, _, found := location.leaf.Get([]byte(tc.key))
 			assert.Equal(t, tc.found, found)
+
 			if tc.found {
 				assert.Equal(t, []byte("value:"+tc.key), value)
 			} else {
@@ -210,6 +237,7 @@ func TestDatabase_FindLeafTraversesMultipleLevels(t *testing.T) {
 			}
 		})
 	}
+
 	location, err := db.findLeaf(nil)
 	require.NoError(t, err)
 	require.NotNil(t, location)
@@ -239,11 +267,13 @@ func TestDatabase_FindLeafHandlesLeafRootsAndSingleChildNodes(t *testing.T) {
 			require.NotNil(t, location)
 			require.NotNil(t, location.leaf)
 			assert.Equal(t, uint64(1), location.pageID)
+
 			if tc.root == 1 {
 				assert.Empty(t, location.parents)
 			} else {
 				assert.Equal(t, []uint64{2}, location.parents)
 			}
+
 			_, _, found := location.leaf.Get([]byte(tc.key))
 			assert.Equal(t, tc.found, found)
 		})
@@ -303,6 +333,7 @@ func TestDatabase_FindLeafPropagatesReadErrors(t *testing.T) {
 			assert.Nil(t, location)
 		})
 	}
+
 	t.Run("MissingChild", func(t *testing.T) {
 		pages := [][]byte{traversalInternalPage(t, []string{"cat"}, []uint64{2, 3}), traversalLeafPage(t, "ant"), traversalLeafPage(t, "cat")}
 		db, path := newTraversalDatabase(t, 1, pages)

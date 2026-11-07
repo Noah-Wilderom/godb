@@ -34,9 +34,11 @@ func TestBPlusInternal_InsertSplitAtEveryChildPosition(t *testing.T) {
 			assert.Equal(t, tc.wantKeys, node.keys)
 			assert.Equal(t, tc.wantChildren, node.children)
 			require.NoError(t, ValidateInternal(node))
+
 			for i, key := range tc.wantKeys {
 				assert.Equal(t, tc.wantChildren[i+1], node.ChildFor(key), "key %x", key)
 			}
+
 			page, err := EncodeInternal(node)
 			require.NoError(t, err)
 			decoded, err := DecodeInternal(page)
@@ -156,9 +158,11 @@ func TestNewBPlusInternal_AcceptsValidNodes(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, node)
 			assert.Len(t, node.keys, len(tc.keys))
+
 			for i := range tc.keys {
 				assert.Equal(t, tc.keys[i], node.keys[i])
 			}
+
 			assert.Equal(t, tc.children, node.children)
 		})
 	}
@@ -216,24 +220,33 @@ func TestNewBPlusInternal_CopiesInputs(t *testing.T) {
 func TestBPlusInternal_ChildFor(t *testing.T) {
 	node, err := NewBPlusInternal(byteStrings("cat", "dog"), []uint64{7, 3, 9})
 	require.NoError(t, err)
+
 	cases := []struct {
 		key  string
 		want uint64
 	}{
-		{"", 7}, {"ant", 7}, {"ca", 7}, {"cat", 3},
-		{"catalog", 3}, {"cow", 3}, {"dog", 9}, {"zebra", 9},
+		{"", 7},
+		{"ant", 7},
+		{"ca", 7},
+		{"cat", 3},
+		{"catalog", 3},
+		{"cow", 3},
+		{"dog", 9},
+		{"zebra", 9},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("Key_%q", tc.key), func(t *testing.T) {
 			assert.Equal(t, tc.want, node.ChildFor([]byte(tc.key)))
 		})
 	}
+
 	assert.Equal(t, uint64(7), node.ChildFor(nil))
 }
 
 func TestBPlusInternal_ChildForSingleChild(t *testing.T) {
 	node, err := NewBPlusInternal(nil, []uint64{42})
 	require.NoError(t, err)
+
 	for _, key := range [][]byte{nil, {}, []byte("cat"), {0xff}} {
 		assert.Equal(t, uint64(42), node.ChildFor(key))
 	}
@@ -242,14 +255,25 @@ func TestBPlusInternal_ChildForSingleChild(t *testing.T) {
 func TestBPlusInternal_ChildForByteOrdering(t *testing.T) {
 	node, err := NewBPlusInternal(byteStrings("", "\x00", "10", "2", "cat", "catalog", "猫", "\xff"), []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9})
 	require.NoError(t, err)
+
 	cases := []struct {
 		key  []byte
 		want uint64
 	}{
-		{nil, 2}, {[]byte{}, 2}, {[]byte{0}, 3}, {[]byte{0, 0}, 3},
-		{[]byte("10"), 4}, {[]byte("11"), 4}, {[]byte("2"), 5},
-		{[]byte("cat"), 6}, {[]byte("cata"), 6}, {[]byte("catalog"), 7},
-		{[]byte("猫"), 8}, {[]byte{0xfe}, 8}, {[]byte{0xff}, 9}, {[]byte{0xff, 0}, 9},
+		{nil, 2},
+		{[]byte{}, 2},
+		{[]byte{0}, 3},
+		{[]byte{0, 0}, 3},
+		{[]byte("10"), 4},
+		{[]byte("11"), 4},
+		{[]byte("2"), 5},
+		{[]byte("cat"), 6},
+		{[]byte("cata"), 6},
+		{[]byte("catalog"), 7},
+		{[]byte("猫"), 8},
+		{[]byte{0xfe}, 8},
+		{[]byte{0xff}, 9},
+		{[]byte{0xff, 0}, 9},
 	}
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, node.ChildFor(tc.key), "key %x", tc.key)
@@ -262,11 +286,13 @@ func TestBPlusInternal_ChildForEveryBoundary(t *testing.T) {
 			keys, children := internalFixture(count)
 			node, err := NewBPlusInternal(keys, children)
 			require.NoError(t, err)
+
 			for value := 0; value <= 2*count+2; value++ {
 				index := value / 2
 				if index > count {
 					index = count
 				}
+
 				key := []byte(fmt.Sprintf("%08d", value))
 				assert.Equal(t, children[index], node.ChildFor(key), "key %q", key)
 			}
@@ -277,11 +303,14 @@ func TestBPlusInternal_ChildForEveryBoundary(t *testing.T) {
 func internalFixture(count int) ([][]byte, []uint64) {
 	keys := make([][]byte, count)
 	children := make([]uint64, count+1)
+
 	for i := range keys {
 		keys[i] = []byte(fmt.Sprintf("%08d", 2*(i+1)))
 	}
+
 	for i := range children {
 		children[i] = uint64(count + 1 - i)
 	}
+
 	return keys, children
 }

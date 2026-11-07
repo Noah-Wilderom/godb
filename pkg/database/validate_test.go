@@ -51,7 +51,7 @@ func TestValidate_ReadsRootAtHeaderPageID(t *testing.T) {
 	require.NoError(t, Validate(path))
 
 	contents[8192] = 0xff
-	require.NoError(t, os.WriteFile(path, contents, 0600))
+	require.NoError(t, os.WriteFile(path, contents, 0o600))
 	require.Error(t, Validate(path))
 }
 
@@ -190,6 +190,6 @@ func validDatabaseBytes() []byte {
 func writeDatabaseFixture(t testing.TB, contents []byte) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "database.db")
-	require.NoError(t, os.WriteFile(path, contents, 0600))
+	require.NoError(t, os.WriteFile(path, contents, 0o600))
 	return path
 }

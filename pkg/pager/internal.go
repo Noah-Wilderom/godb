@@ -99,6 +99,7 @@ func (n *BPlusInternal) Split() ([]*BPlusInternal, [][]byte, error) {
 		internals  []*BPlusInternal
 		separators [][]byte
 	)
+
 	for i := range n.keys {
 		entrySize := internalEntryHeaderSize + len(n.keys[i])
 		if remainingSpace < entrySize {
@@ -121,6 +122,7 @@ func (n *BPlusInternal) Split() ([]*BPlusInternal, [][]byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
 	internals = append(internals, internal)
 	return internals, separators, nil
 }

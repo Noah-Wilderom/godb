@@ -91,6 +91,7 @@ func (l *BPlusLeaf) Split() ([]*BPlusLeaf, error) {
 	remainingSpace := pagerByteSize - leafHeaderSize
 
 	var leaves []*BPlusLeaf
+
 	for i := range l.keys {
 		entrySize := leafEntryHeaderSize + len(l.keys[i]) + len(l.values[i])
 		if entrySize > remainingSpace {
@@ -111,6 +112,7 @@ func (l *BPlusLeaf) Split() ([]*BPlusLeaf, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	leaves = append(leaves, leaf)
 
 	return leaves, nil

@@ -123,7 +123,7 @@ func (db *Database) prepareTreeSplit(location *leafLocation) (*treeSplitPlan, er
 	for i := len(location.parents) - 1; i >= 0; i-- {
 		parentID := location.parents[i]
 
-		parentPage, err := db.pager.ReadPage(parentID)
+		parentPage, err := db.readPage(parentID)
 		if err != nil {
 			return nil, fmt.Errorf("read parent page %d: %w", parentID, err)
 		}
@@ -149,6 +149,7 @@ func (db *Database) prepareTreeSplit(location *leafLocation) (*treeSplitPlan, er
 			childID = parentID
 			continue
 		}
+
 		if err != nil {
 			return nil, fmt.Errorf("encode updated parent page %d: %w", parentID, err)
 		}
@@ -186,6 +187,7 @@ func (db *Database) prepareTreeSplit(location *leafLocation) (*treeSplitPlan, er
 			separators = split.separators
 			continue
 		}
+
 		if err != nil {
 			return nil, fmt.Errorf("encode new root internal node: %w", err)
 		}
@@ -195,7 +197,7 @@ func (db *Database) prepareTreeSplit(location *leafLocation) (*treeSplitPlan, er
 	}
 }
 
-func (db *Database) applyTreeSplit(plan *treeSplitPlan) error {
+func (db *Database) writeTreeSplit(plan *treeSplitPlan) error {
 	header, err := pager.EncodeHeader(&plan.header)
 	if err != nil {
 		return fmt.Errorf("encode new header: %w", err)
@@ -211,7 +213,7 @@ func (db *Database) applyTreeSplit(plan *treeSplitPlan) error {
 	}
 
 	for idx, page := range plan.appendedPages {
-		pageID, err := db.pager.AppendPage(page)
+		pageID, err := db.appendPage(page)
 		if err != nil {
 			return fmt.Errorf("append page %d: %w", idx, err)
 		}
@@ -222,19 +224,16 @@ func (db *Database) applyTreeSplit(plan *treeSplitPlan) error {
 	}
 
 	for idx, update := range plan.updates {
-		if err := db.pager.WritePage(update.pageID, update.page); err != nil {
+		if err := db.writePage(update.pageID, update.page); err != nil {
 			return fmt.Errorf("write updated page %d (page ID %d): %w", idx, update.pageID, err)
 		}
 	}
 
-	if err := db.pager.WritePage(0, header); err != nil {
+	if err := db.writePage(0, header); err != nil {
 		return fmt.Errorf("write new header page: %w", err)
 	}
 
-	if err := db.pager.Flush(); err != nil {
-		return fmt.Errorf("flush pager: %w", err)
-	}
-
 	db.header = &plan.header
+	db.counters.splitOperations.Add(1)
 	return nil
 }

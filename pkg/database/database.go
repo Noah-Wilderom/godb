@@ -4,13 +4,24 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 type Database struct {
-	pager  *pager.Pager
+	pager  pageStore
 	header *pager.DatabaseHeader
+
+	mu     sync.RWMutex
+	closed bool
+	failed error
+
+	submitMu sync.RWMutex
+	closing  bool
+	writes   chan *writeRequest
+	done     chan struct{}
+	counters counters
 }
 
 type leafLocation struct {
@@ -29,6 +40,7 @@ func Create(path string) (err error) {
 	}
 
 	header := pager.NewDatabaseHeader()
+
 	headerPage, err := pager.EncodeHeader(header)
 	if err != nil {
 		return fmt.Errorf("encode database header: %w", err)
@@ -48,6 +60,7 @@ func Create(path string) (err error) {
 	if err != nil {
 		return fmt.Errorf("create database: %w", err)
 	}
+
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
 			err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
@@ -57,12 +70,15 @@ func Create(path string) (err error) {
 	if err := file.WritePage(0, headerPage); err != nil {
 		return fmt.Errorf("write database header: %w", err)
 	}
+
 	if err := file.WritePage(header.RootPageID, leafPage); err != nil {
 		return fmt.Errorf("write root leaf: %w", err)
 	}
+
 	if err := file.Flush(); err != nil {
 		return fmt.Errorf("sync database: %w", err)
 	}
+
 	return nil
 }
 
@@ -81,14 +97,15 @@ func Open(path string) (*Database, error) {
 		return nil, errors.Join(err, p.Close())
 	}
 
-	return &Database{
-		pager:  p,
-		header: header,
-	}, nil
+	return newDatabase(p, header), nil
 }
 
 func (db *Database) Put(key, value []byte) error {
-	location, err := db.findLeaf(key)
+	return db.PutBatch([]Entry{{Key: key, Value: value}})
+}
+
+func (db *Database) applyPut(key, value []byte, leaves map[uint64]*pager.BPlusLeaf) error {
+	location, err := db.findLeafWithCache(key, leaves)
 	if err != nil {
 		return fmt.Errorf("find leaf: %w", err)
 	}
@@ -102,26 +119,39 @@ func (db *Database) Put(key, value []byte) error {
 			return fmt.Errorf("prepare tree split: %w", err)
 		}
 
-		return db.applyTreeSplit(plan)
+		clear(leaves)
+		return db.writeTreeSplit(plan)
 	}
+
 	if err != nil {
 		return fmt.Errorf("encode updated leaf: %w", err)
 	}
 
-	if err := db.pager.WritePage(location.pageID, updatedLeaf); err != nil {
+	if err := db.writePage(location.pageID, updatedLeaf); err != nil {
 		return fmt.Errorf("write updated leaf: %w", err)
-	}
-
-	if err := db.pager.Flush(); err != nil {
-		return fmt.Errorf("sync database: %w", err)
 	}
 
 	return nil
 }
 
 func (db *Database) Get(key []byte) ([]byte, bool, error) {
+	db.counters.reads.Add(1)
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if db.closed {
+		db.counters.readErrors.Add(1)
+		return nil, false, ErrClosed
+	}
+
+	if db.failed != nil {
+		db.counters.readErrors.Add(1)
+		return nil, false, db.failed
+	}
+
 	location, err := db.findLeaf(key)
 	if err != nil {
+		db.counters.readErrors.Add(1)
 		return nil, false, fmt.Errorf("find leaf: %w", err)
 	}
 
@@ -130,14 +160,37 @@ func (db *Database) Get(key []byte) ([]byte, bool, error) {
 }
 
 func (db *Database) Close() error {
+	db.submitMu.Lock()
+
+	if !db.closing {
+		db.closing = true
+		close(db.writes)
+	}
+
+	db.submitMu.Unlock()
+	<-db.done
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if db.closed {
+		return nil
+	}
+
+	db.closed = true
 	return db.pager.Close()
 }
 
 func (db *Database) findLeaf(key []byte) (*leafLocation, error) {
+	return db.findLeafWithCache(key, nil)
+}
+
+func (db *Database) findLeafWithCache(key []byte, leaves map[uint64]*pager.BPlusLeaf) (*leafLocation, error) {
 	pageID := db.header.RootPageID
 	visitedPages := make(map[uint64]bool)
 
 	var parents []uint64
+
 	for {
 		if pageID == 0 || pageID >= db.header.PageCount {
 			return nil, fmt.Errorf("invalid page ID %d: %w", pageID, pager.ErrPagerCorruptPage)
@@ -146,9 +199,14 @@ func (db *Database) findLeaf(key []byte) (*leafLocation, error) {
 		if visitedPages[pageID] {
 			return nil, fmt.Errorf("cycle detected in B+ tree at page ID %d: %w", pageID, pager.ErrPagerCorruptPage)
 		}
+
 		visitedPages[pageID] = true
 
-		page, err := db.pager.ReadPage(pageID)
+		if leaf := leaves[pageID]; leaf != nil {
+			return &leafLocation{pageID: pageID, leaf: leaf, parents: parents}, nil
+		}
+
+		page, err := db.readPage(pageID)
 		if err != nil {
 			return nil, fmt.Errorf("read page %d: %w", pageID, err)
 		}
@@ -158,6 +216,10 @@ func (db *Database) findLeaf(key []byte) (*leafLocation, error) {
 			leaf, err := pager.DecodeLeaf(page)
 			if err != nil {
 				return nil, fmt.Errorf("decode leaf page %d: %w", pageID, err)
+			}
+
+			if leaves != nil {
+				leaves[pageID] = leaf
 			}
 
 			return &leafLocation{

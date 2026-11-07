@@ -12,6 +12,7 @@ func BenchmarkValue_Bytes(b *testing.B) {
 			value := NewBytes(make([]byte, size))
 			b.ReportAllocs()
 			b.SetBytes(int64(size))
+
 			for b.Loop() {
 				got, err := value.Bytes()
 				if err != nil || len(got) != size {
@@ -29,6 +30,7 @@ func BenchmarkNewJSON(b *testing.B) {
 			input = append(input, '"', '}')
 			b.ReportAllocs()
 			b.SetBytes(int64(len(input)))
+
 			for b.Loop() {
 				value, err := NewJSON(input)
 				if err != nil || value.Type() != TypeJSON {
