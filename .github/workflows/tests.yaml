@@ -12,9 +12,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Run Tests
-        run: go test ./... -race -v -coverprofile=coverage.out -covermode=atomic
+        run: go test ./... -race -v -coverprofile=coverage.txt -covermode=atomic
       - name: Convert coverage to Cobertura XML
-        run: go run github.com/boumenot/gocover-cobertura@v1.5.0 -strict < coverage.out > coverage.xml
+        run: go run github.com/boumenot/gocover-cobertura@v1.5.0 -strict < coverage.txt > coverage.xml
       - name: Store coverage report
         uses: actions/upload-artifact@v7
         with:
