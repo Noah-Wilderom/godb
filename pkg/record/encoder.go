@@ -76,15 +76,15 @@ func decodeValue(encoded []byte, depth int) (Value, int, error) {
 
 		switch typ {
 		case TypeInt64:
-			value = NewInt64(int64(bits))
+			value = NewInt64(int64(bits)) // #nosec G115 -- Reinterpret all 64 bits as a signed two's-complement value, including negatives.
 		case TypeUint64:
 			value = NewUint64(bits)
 		case TypeFloat64:
 			value = NewFloat64(math.Float64frombits(bits))
 		case TypeTimestamp:
-			value = NewTimestamp(int64(bits))
+			value = NewTimestamp(int64(bits)) // #nosec G115 -- Reinterpret signed seconds; negative timestamps are valid.
 		case TypeDuration:
-			value = NewDuration(int64(bits))
+			value = NewDuration(int64(bits)) // #nosec G115 -- Reinterpret signed seconds; negative durations are valid.
 		case TypeTime:
 			if bits >= uint64(24*time.Hour) {
 				return Value{}, 0, fmt.Errorf("time must be less than 24 hours")
@@ -150,7 +150,7 @@ func decodeLengthPrefixed(encoded []byte) ([]byte, int, error) {
 	}
 
 	length := binary.LittleEndian.Uint32(encoded[:valueLengthSize])
-	if uint64(length) > uint64(len(encoded)-valueLengthSize) {
+	if uint64(length) > uint64(len(encoded[valueLengthSize:])) {
 		return nil, 0, fmt.Errorf("payload length %d exceeds remaining bytes", length)
 	}
 
@@ -200,7 +200,7 @@ func decodeDecimalValue(encoded []byte) (Value, int, error) {
 		return Value{}, 0, fmt.Errorf("truncated decimal header")
 	}
 
-	exponent := int32(binary.LittleEndian.Uint32(encoded[1:5]))
+	exponent := int32(binary.LittleEndian.Uint32(encoded[1:5])) // #nosec G115 -- Decode the signed two's-complement exponent without changing its bits.
 
 	sign := encoded[5]
 	if sign > 1 {
@@ -238,12 +238,12 @@ func decodeCollectionValue(typ Type, encoded []byte, depth int) (Value, int, err
 
 	count := binary.LittleEndian.Uint32(encoded[1:headerSize])
 
-	minimumEntrySize := valueTagSize
+	minimumEntrySize := uint64(valueTagSize)
 	if typ == TypeMap {
 		minimumEntrySize += valueLengthSize
 	}
 
-	if uint64(count) > uint64((len(encoded)-headerSize)/minimumEntrySize) {
+	if uint64(count) > uint64(len(encoded[headerSize:]))/minimumEntrySize {
 		return Value{}, 0, fmt.Errorf("collection count %d exceeds remaining bytes", count)
 	}
 
@@ -327,7 +327,7 @@ func encodeValue(value Value, depth int) ([]byte, error) {
 			return nil, err
 		}
 
-		return encodeUint64Payload(TypeInt64, uint64(intVal)), nil
+		return encodeUint64Payload(TypeInt64, uint64(intVal)), nil // #nosec G115 -- Preserve the signed value's two's-complement bits for binary storage.
 	case TypeUint64:
 		uintVal, err := value.Uint64()
 		if err != nil {
@@ -420,7 +420,7 @@ func encodeValue(value Value, depth int) ([]byte, error) {
 
 		encoded := make([]byte, valueTagSize+4+1)
 		encoded[0] = byte(TypeDecimal)
-		binary.LittleEndian.PutUint32(encoded[1:5], uint32(number.Exponent()))
+		binary.LittleEndian.PutUint32(encoded[1:5], uint32(number.Exponent())) // #nosec G115 -- Preserve all 32 bits of the signed decimal exponent.
 
 		if number.Sign() < 0 {
 			encoded[5] = 1
@@ -433,14 +433,14 @@ func encodeValue(value Value, depth int) ([]byte, error) {
 			return nil, err
 		}
 
-		return encodeUint64Payload(TypeTimestamp, uint64(timestamp)), nil
+		return encodeUint64Payload(TypeTimestamp, uint64(timestamp)), nil // #nosec G115 -- Preserve two's-complement bits, including timestamps before the epoch.
 	case TypeDuration:
 		duration, err := value.Duration()
 		if err != nil {
 			return nil, err
 		}
 
-		return encodeUint64Payload(TypeDuration, uint64(duration)), nil
+		return encodeUint64Payload(TypeDuration, uint64(duration)), nil // #nosec G115 -- Preserve two's-complement bits, including negative durations.
 	case TypeArray:
 		values, err := value.Array()
 		if err != nil {
@@ -533,7 +533,7 @@ func encodeCalendarValue(typ Type, value time.Time) ([]byte, error) {
 	encoded[0] = byte(typ)
 	binary.LittleEndian.PutUint16(encoded[1:3], uint16(year))
 
-	encoded[3], encoded[4] = byte(month), byte(day)
+	encoded[3], encoded[4] = byte(month), byte(day) // #nosec G115 -- time.Time.Date returns month 1..12 and day 1..31.
 	if typ == TypeDateTime {
 		binary.LittleEndian.PutUint64(encoded[5:], clockNanoseconds(value))
 	}
@@ -543,7 +543,7 @@ func encodeCalendarValue(typ Type, value time.Time) ([]byte, error) {
 
 func clockNanoseconds(value time.Time) uint64 {
 	seconds := value.Hour()*3600 + value.Minute()*60 + value.Second()
-	return uint64(seconds)*1_000_000_000 + uint64(value.Nanosecond())
+	return uint64(seconds)*1_000_000_000 + uint64(value.Nanosecond()) // #nosec G115 -- time.Time guarantees seconds 0..86399 and nanoseconds 0..999999999.
 }
 
 func encodeCollectionHeader(typ Type, count int) ([]byte, error) {
@@ -566,12 +566,17 @@ func checkEncodedValueSize(size uint64) error {
 }
 
 func appendLengthPrefixed(encoded, payload []byte) ([]byte, error) {
-	size := uint64(len(encoded)) + valueLengthSize + uint64(len(payload))
+	length := len(payload)
+	if uint64(length) > math.MaxUint32 {
+		return nil, fmt.Errorf("payload length exceeds uint32 range")
+	}
+
+	size := uint64(len(encoded)) + valueLengthSize + uint64(length)
 	if err := checkEncodedValueSize(size); err != nil {
 		return nil, err
 	}
 
-	encoded = binary.LittleEndian.AppendUint32(encoded, uint32(len(payload)))
+	encoded = binary.LittleEndian.AppendUint32(encoded, uint32(length))
 	return append(encoded, payload...), nil
 }
 

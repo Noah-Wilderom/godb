@@ -3,6 +3,7 @@ package pager
 import (
 	"bytes"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPageOffset_Bounds(t *testing.T) {
+	for _, id := range []uint64{0, 1, maxPageID} {
+		offset, err := pageOffset(id)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, offset, int64(0))
+		assert.LessOrEqual(t, offset, int64(math.MaxInt64-pagerByteSize))
+		assert.Equal(t, id, uint64(offset/pagerByteSize))
+	}
+
+	for _, id := range []uint64{maxPageID + 1, 1 << 52, math.MaxUint64} {
+		offset, err := pageOffset(id)
+		require.Error(t, err)
+		assert.Zero(t, offset)
+	}
+}
 
 func TestCreatePager_WithMissingFileCreatesEmptyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.db")

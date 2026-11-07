@@ -14,7 +14,7 @@ func EncodeLeaf(leaf *BPlusLeaf) ([]byte, error) {
 	buff := make([]byte, pagerByteSize)
 	buff[0] = PageTypeLeaf
 
-	binary.LittleEndian.PutUint16(buff[1:leafHeaderSize], uint16(len(leaf.keys)))
+	binary.LittleEndian.PutUint16(buff[1:leafHeaderSize], uint16(len(leaf.keys))) // #nosec G115 -- ValidateLeaf bounds the entry count by the 4096-byte page capacity.
 
 	offset := leafHeaderSize
 	for i := 0; i < len(leaf.keys); i++ {
@@ -24,8 +24,8 @@ func EncodeLeaf(leaf *BPlusLeaf) ([]byte, error) {
 		valueStart := keyStart + len(leaf.keys[i])
 		entryEnd := valueStart + len(leaf.values[i])
 
-		binary.LittleEndian.PutUint16(buff[keyLengthStart:valueLengthStart], uint16(len(leaf.keys[i])))
-		binary.LittleEndian.PutUint16(buff[valueLengthStart:keyStart], uint16(len(leaf.values[i])))
+		binary.LittleEndian.PutUint16(buff[keyLengthStart:valueLengthStart], uint16(len(leaf.keys[i]))) // #nosec G115 -- ValidateLeaf limits every key to at most 4075 bytes.
+		binary.LittleEndian.PutUint16(buff[valueLengthStart:keyStart], uint16(len(leaf.values[i])))     // #nosec G115 -- ValidateLeaf limits each key/value payload to at most 4089 bytes.
 
 		copy(buff[keyStart:valueStart], leaf.keys[i])
 		copy(buff[valueStart:entryEnd], leaf.values[i])
@@ -159,7 +159,7 @@ func EncodeInternal(node *BPlusInternal) ([]byte, error) {
 	buff[0] = PageTypeInternal
 
 	countEnd := 1 + uint16Size
-	binary.LittleEndian.PutUint16(buff[1:countEnd], uint16(len(node.keys)))
+	binary.LittleEndian.PutUint16(buff[1:countEnd], uint16(len(node.keys))) // #nosec G115 -- ValidateInternal bounds the key count by the 4096-byte page capacity.
 	binary.LittleEndian.PutUint64(buff[countEnd:internalHeaderSize], node.children[0])
 
 	offset := internalHeaderSize
@@ -169,7 +169,7 @@ func EncodeInternal(node *BPlusInternal) ([]byte, error) {
 		childStart := keyStart + len(node.keys[i])
 		entryEnd := childStart + uint64Size
 
-		binary.LittleEndian.PutUint16(buff[keyLengthStart:keyStart], uint16(len(node.keys[i])))
+		binary.LittleEndian.PutUint16(buff[keyLengthStart:keyStart], uint16(len(node.keys[i]))) // #nosec G115 -- ValidateInternal limits every key to at most 4075 bytes.
 		copy(buff[keyStart:childStart], node.keys[i])
 		binary.LittleEndian.PutUint64(buff[childStart:entryEnd], node.children[i+1])
 
