@@ -29,12 +29,12 @@ jobs:
   security:
     runs-on: ubuntu-latest
     env:
-      GO11MODULE: on
+      GO111MODULE: "on"
     steps:
       - name: Checkout Source
         uses: actions/checkout@v7
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@v2
+        uses: securego/gosec@v2.30.0
         with:
           args: ./...
 
