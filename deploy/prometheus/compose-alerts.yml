@@ -1,0 +1,10 @@
+groups:
+  - name: godb-compose
+    rules:
+      - alert: GodbComposeMemberMissing
+        expr: absent(up{job="godb",member="node1"}) or absent(up{job="godb",member="node2"}) or absent(up{job="godb",member="node3"})
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "An expected GoDB Compose member is missing from discovery"

@@ -82,6 +82,17 @@ func (l *BPlusLeaf) Put(key, value []byte) {
 	l.values[low] = bytes.Clone(value)
 }
 
+func (l *BPlusLeaf) Delete(key []byte) bool {
+	index, found := slices.BinarySearchFunc(l.keys, key, bytes.Compare)
+	if !found {
+		return false
+	}
+
+	l.keys = slices.Delete(l.keys, index, index+1)
+	l.values = slices.Delete(l.values, index, index+1)
+	return true
+}
+
 func (l *BPlusLeaf) Split() ([]*BPlusLeaf, error) {
 	if err := ValidateLeaf(l); err != nil && !errors.Is(err, ErrPagerPageFull) {
 		return nil, err
@@ -124,4 +135,17 @@ func (l *BPlusLeaf) FirstKey() ([]byte, bool) {
 	}
 
 	return slices.Clone(l.keys[0]), true
+}
+
+func (l *BPlusLeaf) LowerBound(key []byte) int {
+	index, _ := slices.BinarySearchFunc(l.keys, key, bytes.Compare)
+	return index
+}
+
+func (l *BPlusLeaf) EntryAt(index int) (key, value []byte, found bool) {
+	if index < 0 || index >= len(l.keys) {
+		return nil, nil, false
+	}
+
+	return bytes.Clone(l.keys[index]), bytes.Clone(l.values[index]), true
 }

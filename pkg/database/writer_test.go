@@ -18,9 +18,18 @@ import (
 type hookedStore struct {
 	pageStore
 
+	read   func(uint64) ([]byte, error)
 	write  func(uint64, []byte) error
 	append func([]byte) (uint64, error)
 	sync   func() error
+}
+
+func (p *hookedStore) ReadPage(id uint64) ([]byte, error) {
+	if p.read != nil {
+		return p.read(id)
+	}
+
+	return p.pageStore.ReadPage(id)
 }
 
 func (p *hookedStore) WritePage(id uint64, page []byte) error {

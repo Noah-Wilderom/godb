@@ -8,6 +8,7 @@ type Stats struct {
 	WriteRequests   uint64
 	WriteErrors     uint64
 	Writes          uint64
+	Deletes         uint64
 	WriteBatches    uint64
 	SplitOperations uint64
 	PageReads       uint64
@@ -23,6 +24,7 @@ type counters struct {
 	writeRequests   atomic.Uint64
 	writeErrors     atomic.Uint64
 	writes          atomic.Uint64
+	deletes         atomic.Uint64
 	writeBatches    atomic.Uint64
 	splitOperations atomic.Uint64
 	pageReads       atomic.Uint64
@@ -39,6 +41,7 @@ func (db *Database) Stats() Stats {
 		WriteRequests:   db.counters.writeRequests.Load(),
 		WriteErrors:     db.counters.writeErrors.Load(),
 		Writes:          db.counters.writes.Load(),
+		Deletes:         db.counters.deletes.Load(),
 		WriteBatches:    db.counters.writeBatches.Load(),
 		SplitOperations: db.counters.splitOperations.Load(),
 		PageReads:       db.counters.pageReads.Load(),

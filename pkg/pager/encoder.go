@@ -2,6 +2,7 @@ package pager
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 )
@@ -102,7 +103,16 @@ func EncodeHeader(header *DatabaseHeader) ([]byte, error) {
 	copy(buff[0:len(databaseSignature)], databaseSignature)
 
 	binary.LittleEndian.PutUint16(buff[headerSignatureEnd:headerFormatVersionEnd], header.FormatVersion)
-	binary.LittleEndian.PutUint16(buff[headerFormatVersionEnd:headerLengthEnd], uint16(headerLength))
+
+	length := uint16(headerLength)
+	if header.FormatVersion == currentFormatVersion {
+		length = uint16(headerIdentityChecksumEnd)
+		copy(buff[headerLength:headerIdentityEnd], header.DatabaseID[:])
+		digest := sha256.Sum256(header.DatabaseID[:])
+		copy(buff[headerIdentityEnd:headerIdentityChecksumEnd], digest[:])
+	}
+
+	binary.LittleEndian.PutUint16(buff[headerFormatVersionEnd:headerLengthEnd], length)
 	binary.LittleEndian.PutUint32(buff[headerLengthEnd:headerPageSizeEnd], header.PageSize)
 	// reserved zeros: buff[headerPageSizeEnd:headerReservedEnd]
 	binary.LittleEndian.PutUint64(buff[headerReservedEnd:headerRootPageIDEnd], header.RootPageID)
@@ -122,7 +132,14 @@ func DecodeHeader(page []byte) (*DatabaseHeader, error) {
 		}
 	}
 
-	for _, b := range page[headerLength:] {
+	length := headerLength
+
+	version := binary.LittleEndian.Uint16(page[headerSignatureEnd:headerFormatVersionEnd])
+	if version == currentFormatVersion {
+		length = headerIdentityChecksumEnd
+	}
+
+	for _, b := range page[length:] {
 		if b != 0 {
 			return nil, fmt.Errorf("reserved header bytes must be zero")
 		}
@@ -132,7 +149,7 @@ func DecodeHeader(page []byte) (*DatabaseHeader, error) {
 		return nil, fmt.Errorf("invalid database signature")
 	}
 
-	if binary.LittleEndian.Uint16(page[headerFormatVersionEnd:headerLengthEnd]) != uint16(headerLength) {
+	if int(binary.LittleEndian.Uint16(page[headerFormatVersionEnd:headerLengthEnd])) != length {
 		return nil, fmt.Errorf("invalid header length")
 	}
 
@@ -141,6 +158,14 @@ func DecodeHeader(page []byte) (*DatabaseHeader, error) {
 		PageSize:      binary.LittleEndian.Uint32(page[headerLengthEnd:headerPageSizeEnd]),
 		RootPageID:    binary.LittleEndian.Uint64(page[headerReservedEnd:headerRootPageIDEnd]),
 		PageCount:     binary.LittleEndian.Uint64(page[headerRootPageIDEnd:headerPageCountEnd]),
+	}
+	if version == currentFormatVersion {
+		id, err := DecodeHeaderIdentity(page)
+		if err != nil {
+			return nil, err
+		}
+
+		header.DatabaseID = id
 	}
 
 	if err := ValidateHeader(header); err != nil {

@@ -3,6 +3,8 @@ package database
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
@@ -12,7 +14,18 @@ func Validate(path string) (err error) {
 		return errors.New("database path must not be empty")
 	}
 
-	p, err := pager.OpenPager(path)
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+
+	if info, err := os.Stat(resolved + ".wal"); err == nil && info.Size() > 0 {
+		return ErrRecoveryRequired
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	p, err := pager.OpenPager(resolved)
 	if err != nil {
 		return err
 	}
@@ -23,11 +36,15 @@ func Validate(path string) (err error) {
 		}
 	}()
 
-	_, err = inspect(p)
-	return err
+	header, err := inspect(p)
+	if err != nil {
+		return err
+	}
+
+	return validateContents(p, header)
 }
 
-func inspect(p *pager.Pager) (*pager.DatabaseHeader, error) {
+func inspect(p pageStore) (*pager.DatabaseHeader, error) {
 	pageZero, err := p.ReadPage(uint64(0))
 	if err != nil {
 		return nil, err

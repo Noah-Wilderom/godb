@@ -15,6 +15,27 @@ const (
 	indexKeyHeaderSize        = 9
 )
 
+func DecodeIndexKeyHeader(encoded []byte) (tableID, indexID uint32, err error) {
+	if len(encoded) < indexKeyHeaderSize || encoded[0] != keyFormatVersion {
+		return 0, 0, fmt.Errorf("missing or unsupported index key header")
+	}
+
+	tableID = binary.BigEndian.Uint32(encoded[1:5])
+	if tableID == 0 {
+		return 0, 0, fmt.Errorf("index key table ID must be nonzero")
+	}
+
+	return tableID, binary.BigEndian.Uint32(encoded[5:9]), nil
+}
+
+func EncodePrimaryPrefix(table Table) ([]byte, error) {
+	if err := ValidateTable(table); err != nil {
+		return nil, err
+	}
+
+	return encodeIndexKey(table.ID, primaryIndexID, nil)
+}
+
 func EncodePrimaryKey(table Table, value record.Value) ([]byte, error) {
 	if err := ValidateTable(table); err != nil {
 		return nil, err
@@ -49,17 +70,9 @@ func EncodeIndexEntry(table Table, indexID uint32, row Row) (IndexEntry, error) 
 		return IndexEntry{}, err
 	}
 
-	var index *Index
-
-	for i := range table.Indexes {
-		if table.Indexes[i].ID == indexID {
-			index = &table.Indexes[i]
-			break
-		}
-	}
-
-	if index == nil {
-		return IndexEntry{}, fmt.Errorf("table %q: secondary index ID %d does not exist", table.Name, indexID)
+	index, err := findIndex(table, indexID)
+	if err != nil {
+		return IndexEntry{}, err
 	}
 
 	primaryComponent, err := record.EncodeKeyValue(row[table.PrimaryKeyColumnID])
@@ -73,6 +86,98 @@ func EncodeIndexEntry(table Table, indexID uint32, row Row) (IndexEntry, error) 
 	}
 
 	return encodeIndexEntry(table.ID, *index, row, primaryComponent, primaryKey)
+}
+
+func EncodeUniqueIndexKey(table Table, indexID uint32, values ...record.Value) ([]byte, error) {
+	if err := ValidateTable(table); err != nil {
+		return nil, err
+	}
+
+	index, err := findIndex(table, indexID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !index.Unique {
+		return nil, fmt.Errorf("index %q is not unique", index.Name)
+	}
+
+	if len(values) != len(index.ColumnIDs) {
+		return nil, fmt.Errorf("index %q requires %d values, got %d", index.Name, len(index.ColumnIDs), len(values))
+	}
+
+	return encodeIndexPrefix(table, *index, false, values)
+}
+
+func EncodeIndexPrefix(table Table, indexID uint32, values ...record.Value) ([]byte, error) {
+	if err := ValidateTable(table); err != nil {
+		return nil, err
+	}
+
+	index, err := findIndex(table, indexID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(values) > len(index.ColumnIDs) {
+		return nil, fmt.Errorf("index %q has %d columns, got %d prefix values", index.Name, len(index.ColumnIDs), len(values))
+	}
+
+	return encodeIndexPrefix(table, *index, true, values)
+}
+
+func encodeIndexPrefix(table Table, index Index, allowNull bool, values []record.Value) ([]byte, error) {
+	columns := make(map[uint32]Column, len(table.Columns))
+	for _, column := range table.Columns {
+		columns[column.ID] = column
+	}
+
+	key, err := encodeIndexKey(table.ID, index.ID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, value := range values {
+		id := index.ColumnIDs[i]
+		column := columns[id]
+		component := []byte{byte(record.TypeNull)}
+
+		if value.IsNull() {
+			if !allowNull {
+				return nil, fmt.Errorf("index %q: null column ID %d requires a scan, not a unique lookup", index.Name, id)
+			}
+
+			if !column.Nullable {
+				return nil, fmt.Errorf("index %q: column ID %d must not be null", index.Name, id)
+			}
+		} else {
+			if value.Type() != column.Type {
+				return nil, fmt.Errorf("index %q: column ID %d has value type 0x%02x; expected 0x%02x", index.Name, id, value.Type(), column.Type)
+			}
+
+			component, err = record.EncodeKeyValue(value)
+			if err != nil {
+				return nil, fmt.Errorf("encode index %q column ID %d: %w", index.Name, id, err)
+			}
+		}
+
+		key, err = appendIndexKey(key, component)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return key, nil
+}
+
+func findIndex(table Table, indexID uint32) (*Index, error) {
+	for i := range table.Indexes {
+		if table.Indexes[i].ID == indexID {
+			return &table.Indexes[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("table %q: secondary index ID %d does not exist", table.Name, indexID)
 }
 
 func EncodeIndexEntries(table Table, row Row) ([]IndexEntry, error) {

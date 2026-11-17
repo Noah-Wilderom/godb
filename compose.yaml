@@ -1,0 +1,125 @@
+name: godb
+
+x-member: &member
+  image: godb-dev:local
+  build:
+    context: .
+    dockerfile: deploy/docker/Dockerfile
+    target: member
+    args:
+      VERSION: ${GODB_VERSION:-dev}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 30s
+  depends_on:
+    certificates:
+      condition: service_completed_successfully
+  healthcheck:
+    test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:9091/metrics]
+    interval: 10s
+    timeout: 3s
+    retries: 3
+    start_period: 10s
+
+services:
+  certificates:
+    image: godb-dev-certificates:local
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      target: certificates
+    restart: "no"
+    network_mode: none
+    volumes:
+      - certificate-authority:/ca
+      - node1-certificates:/certs/node1
+      - node2-certificates:/certs/node2
+      - node3-certificates:/certs/node3
+
+  node1:
+    <<: *member
+    environment:
+      GODB_NODE_ID: "1"
+    volumes:
+      - node1-data:/var/lib/godb
+      - node1-certificates:/etc/godb/tls:ro
+
+  node2:
+    <<: *member
+    environment:
+      GODB_NODE_ID: "2"
+    volumes:
+      - node2-data:/var/lib/godb
+      - node2-certificates:/etc/godb/tls:ro
+
+  node3:
+    <<: *member
+    environment:
+      GODB_NODE_ID: "3"
+    volumes:
+      - node3-data:/var/lib/godb
+      - node3-certificates:/etc/godb/tls:ro
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=1GB
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./deploy/prometheus/compose.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./deploy/prometheus/compose-alerts.yml:/etc/prometheus/compose-alerts.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:9090/-/ready]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:13.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-godb-local-dev}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/godb.json
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./deploy/grafana/provisioning/dashboards/godb.yml:/etc/grafana/provisioning/dashboards/godb.yml:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:3000/api/health]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${GODB_SUBNET:-10.89.71.0/24}
+
+volumes:
+  certificate-authority:
+  node1-certificates:
+  node2-certificates:
+  node3-certificates:
+  node1-data:
+  node2-data:
+  node3-data:
+  prometheus-data:
+  grafana-data:

@@ -3,19 +3,28 @@ package database
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+	"uuid"
 
+	"github.com/Noah-Wilderom/godb/internal/observe"
 	"github.com/Noah-Wilderom/godb/pkg/pager"
 )
 
 type Database struct {
-	pager  pageStore
-	header *pager.DatabaseHeader
+	metrics *engineMetrics
+	pager   pageStore
+	header  *pager.DatabaseHeader
+	wal     *writeAheadLog
 
-	mu     sync.RWMutex
-	closed bool
-	failed error
+	mu       sync.RWMutex
+	closed   bool
+	failed   error
+	revision uint64
+	applied  LogPosition
 
 	submitMu sync.RWMutex
 	closing  bool
@@ -30,6 +39,12 @@ type leafLocation struct {
 	parents []uint64
 }
 
+func (db *Database) ID() uuid.UUID {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return db.header.DatabaseID
+}
+
 func Create(path string) (err error) {
 	if path == "" {
 		return errors.New("database path must not be empty")
@@ -37,6 +52,12 @@ func Create(path string) (err error) {
 
 	if !strings.HasSuffix(path, ".db") {
 		path += ".db"
+	}
+
+	if _, err := os.Stat(path + ".wal"); err == nil {
+		return fmt.Errorf("existing WAL beside new database: %w", ErrRecoveryRequired)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 
 	header := pager.NewDatabaseHeader()
@@ -79,7 +100,7 @@ func Create(path string) (err error) {
 		return fmt.Errorf("sync database: %w", err)
 	}
 
-	return nil
+	return syncDirectory(path)
 }
 
 func Open(path string) (*Database, error) {
@@ -87,17 +108,45 @@ func Open(path string) (*Database, error) {
 		return nil, errors.New("database path must not be empty")
 	}
 
-	p, err := pager.OpenPager(path)
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return nil, err
 	}
 
-	header, err := inspect(p)
+	p, err := pager.OpenPager(resolved)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.LockExclusive(); err != nil {
+		return nil, errors.Join(fmt.Errorf("%w: %w", ErrDatabaseLocked, err), p.Close())
+	}
+
+	wal, err := openWAL(resolved)
 	if err != nil {
 		return nil, errors.Join(err, p.Close())
 	}
 
-	return newDatabase(p, header), nil
+	if err := wal.recover(p); err != nil {
+		return nil, errors.Join(err, wal.file.Close(), p.Close())
+	}
+
+	header, err := inspect(p)
+	if err != nil {
+		return nil, errors.Join(err, wal.file.Close(), p.Close())
+	}
+
+	view := &Database{pager: p, header: header}
+
+	position, err := view.readLogPosition()
+	if err != nil {
+		return nil, errors.Join(err, wal.file.Close(), p.Close())
+	}
+
+	db := newDatabase(p, header)
+	db.applied = position
+	db.wal = wal
+	return db, nil
 }
 
 func (db *Database) Put(key, value []byte) error {
@@ -135,10 +184,18 @@ func (db *Database) applyPut(key, value []byte, leaves map[uint64]*pager.BPlusLe
 }
 
 func (db *Database) Get(key []byte) ([]byte, bool, error) {
+	if db.metrics != nil {
+		defer observe.Since(db.metrics.get, time.Now())
+	}
+
 	db.counters.reads.Add(1)
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
+	return db.getLocked(key)
+}
+
+func (db *Database) getLocked(key []byte) ([]byte, bool, error) {
 	if db.closed {
 		db.counters.readErrors.Add(1)
 		return nil, false, ErrClosed
@@ -178,7 +235,14 @@ func (db *Database) Close() error {
 	}
 
 	db.closed = true
-	return db.pager.Close()
+
+	var walErr error
+
+	if db.wal != nil {
+		walErr = db.wal.file.Close()
+	}
+
+	return errors.Join(walErr, db.pager.Close())
 }
 
 func (db *Database) findLeaf(key []byte) (*leafLocation, error) {

@@ -3,13 +3,58 @@ version: '3'
 vars:
   GOLANGCI_LINT_VERSION: v2.15.0
   GOLANGCI_LINT: ./bin/golangci-lint
+  PROTOC_GEN_GO_VERSION: v1.36.12
+  PROTOC_GEN_GO_GRPC_VERSION: v1.6.2
 
 tasks:
+  dev:up:
+    desc: Build and start three GoDB members, Prometheus, and Grafana
+    cmds:
+      - docker compose up -d --build --wait --wait-timeout 120
+
+  dev:up:tracing:
+    desc: Start the development stack with OTLP tracing stored in Tempo
+    cmds:
+      - docker compose -f compose.yaml -f compose.tracing.yaml up -d --build --wait --wait-timeout 120
+
+  dev:down:
+    desc: Stop the development stack while preserving all volumes
+    cmds:
+      - docker compose -f compose.yaml -f compose.tracing.yaml down
+
+  dev:logs:
+    desc: Follow development stack logs
+    cmds:
+      - docker compose -f compose.yaml -f compose.tracing.yaml logs -f {{.CLI_ARGS}}
+
+  dev:validate:
+    desc: Validate both Compose configurations and the Prometheus configuration/rules
+    cmds:
+      - docker compose config --quiet
+      - docker compose -f compose.yaml -f compose.tracing.yaml config --quiet
+      - docker compose -f compose.yaml -f compose.tracing.yaml run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/prometheus.yml
+      - docker compose -f compose.yaml -f compose.tracing.yaml run --rm --no-deps --entrypoint /bin/promtool prometheus check rules /etc/prometheus/alerts.yml /etc/prometheus/compose-alerts.yml
+
   tools:
     desc: Install development tools
     cmds:
       - go install github.com/spf13/cobra-cli@v1.3.0
       - task: tools:lint
+      - task: tools:proto
+
+  tools:proto:
+    desc: Install the pinned Go protobuf generators (requires protoc separately)
+    cmds:
+      - go install google.golang.org/protobuf/cmd/protoc-gen-go@{{.PROTOC_GEN_GO_VERSION}}
+      - go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@{{.PROTOC_GEN_GO_GRPC_VERSION}}
+
+  proto:
+    desc: Generate the peer RPC bindings
+    preconditions:
+      - sh: command -v protoc && command -v protoc-gen-go && command -v protoc-gen-go-grpc
+        msg: Install protoc and run task tools:proto
+    cmds:
+      - protoc -I . --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative api/peer/v1/peer.proto
 
   tools:lint:
     desc: Install the pinned golangci-lint binary

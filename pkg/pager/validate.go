@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"uuid"
 )
 
 func ValidateLeaf(leaf *BPlusLeaf) error {
@@ -70,8 +71,12 @@ func ValidateHeader(header *DatabaseHeader) error {
 		return errors.New("header is nil")
 	}
 
-	if header.FormatVersion != currentFormatVersion {
+	if header.FormatVersion != 1 && header.FormatVersion != currentFormatVersion {
 		return fmt.Errorf("unsupported database version: %d should be: %d", header.FormatVersion, currentFormatVersion)
+	}
+
+	if (header.FormatVersion == 1) != (header.DatabaseID == uuid.Nil()) {
+		return fmt.Errorf("database identity does not match header format")
 	}
 
 	if header.PageSize != pagerByteSize {

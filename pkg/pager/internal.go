@@ -51,6 +51,40 @@ func (n *BPlusInternal) ChildFor(key []byte) uint64 {
 	return n.children[low]
 }
 
+func (n *BPlusInternal) SeparatorAt(index int) ([]byte, bool) {
+	if index < 0 || index >= len(n.keys) {
+		return nil, false
+	}
+
+	key := make([]byte, len(n.keys[index]))
+	copy(key, n.keys[index])
+	return key, true
+}
+
+func (n *BPlusInternal) ChildrenForRange(start, end []byte) []uint64 {
+	if end != nil && bytes.Compare(start, end) >= 0 {
+		return nil
+	}
+
+	first := 0
+
+	if start != nil {
+		index, equal := slices.BinarySearchFunc(n.keys, start, bytes.Compare)
+		first = index
+
+		if equal {
+			first++
+		}
+	}
+
+	last := len(n.keys)
+	if end != nil {
+		last, _ = slices.BinarySearchFunc(n.keys, end, bytes.Compare)
+	}
+
+	return slices.Clone(n.children[first : last+1])
+}
+
 func (n *BPlusInternal) InsertSplit(childID uint64, separators [][]byte, rightChildren []uint64) error {
 	if len(separators) < 1 || len(separators) != len(rightChildren) {
 		return ErrPagerInvalidArgument

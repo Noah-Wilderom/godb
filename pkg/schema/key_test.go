@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"math"
 	"slices"
@@ -11,6 +12,30 @@ import (
 
 	"github.com/Noah-Wilderom/godb/pkg/record"
 )
+
+func TestDecodeIndexKeyHeader(t *testing.T) {
+	for _, tableID := range []uint32{1, 256, math.MaxUint32} {
+		for _, indexID := range []uint32{0, 1, math.MaxUint32} {
+			key := binary.BigEndian.AppendUint32([]byte{1}, tableID)
+			key = binary.BigEndian.AppendUint32(key, indexID)
+			gotTable, gotIndex, err := DecodeIndexKeyHeader(key)
+			require.NoError(t, err)
+			require.Equal(t, tableID, gotTable)
+			require.Equal(t, indexID, gotIndex)
+			gotTable, gotIndex, err = DecodeIndexKeyHeader(append(key, 0xff))
+			require.NoError(t, err)
+			require.Equal(t, tableID, gotTable)
+			require.Equal(t, indexID, gotIndex)
+		}
+	}
+
+	for _, key := range [][]byte{nil, {1}, {1, 0, 0, 0, 1, 0, 0, 0}, {2, 0, 0, 0, 1, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0, 0, 0}} {
+		tableID, indexID, err := DecodeIndexKeyHeader(key)
+		require.Error(t, err)
+		require.Zero(t, tableID)
+		require.Zero(t, indexID)
+	}
+}
 
 func TestEncodePrimaryKey_GoldenAndIdentity(t *testing.T) {
 	table := testTable()

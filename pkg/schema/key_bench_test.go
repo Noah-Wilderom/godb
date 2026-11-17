@@ -17,3 +17,15 @@ func BenchmarkEncodePrimaryKey(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkEncodeUniqueIndexKey(b *testing.B) {
+	table, row := indexEntryFixture(b, true)
+	table.Indexes[0].ColumnIDs = []uint32{7, 100}
+	b.ReportAllocs()
+
+	for b.Loop() {
+		if _, err := EncodeUniqueIndexKey(table, 3, row[7], row[100]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

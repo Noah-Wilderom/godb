@@ -1,0 +1,44 @@
+groups:
+  - name: godb
+    rules:
+      - alert: GodbScrapeUnavailable
+        expr: up{job="godb"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GoDB metrics endpoint cannot be scraped"
+      - alert: GodbNoObservedLeader
+        expr: max by (group) (godb_raft_is_leader) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No scraped member reports leadership"
+      - alert: GodbEventLoopStalled
+        expr: time() - godb_event_loop_last_progress_timestamp_seconds > 5
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "GoDB event loop has stopped making observable progress"
+      - alert: GodbPersistenceError
+        expr: increase(godb_database_sync_errors_total[5m]) + increase(godb_wal_sync_errors_total[5m]) + increase(godb_raft_store_errors_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "GoDB reported a persistence or journal update error"
+      - alert: GodbSlowDatabaseSync
+        expr: histogram_quantile(0.99, sum by (group, node, le) (rate(godb_database_sync_duration_seconds_bucket[5m]))) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GoDB database sync p99 exceeds 100ms"
+      - alert: GodbPeerDrops
+        expr: increase(godb_peer_dropped_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GoDB is dropping outbound peer messages"

@@ -133,7 +133,7 @@ func TestWriteTreeSplit_RejectsPrewriteFailures(t *testing.T) {
 			case "InvalidPageSize":
 				plan.header.PageSize = 1
 			case "UnsupportedFormat":
-				plan.header.FormatVersion = 2
+				plan.header.FormatVersion = 3
 			case "PageCountTooLarge":
 				plan.header.PageCount = uint64(math.MaxInt64/4096) + 1
 			case "PartialExtraPage":

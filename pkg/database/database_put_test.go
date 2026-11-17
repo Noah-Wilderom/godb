@@ -3,7 +3,6 @@ package database
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"os"
 	"testing"
 
@@ -274,7 +273,7 @@ func TestDatabase_PutWithTruncatedRootPreservesFile(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 	require.NoError(t, os.Truncate(path, 4196))
-	require.ErrorIs(t, db.Put([]byte("a"), nil), io.EOF)
+	require.ErrorIs(t, db.Put([]byte("a"), nil), pager.ErrPagerCorruptPage)
 	assertFileContents(t, path, contents[:4196])
 }
 

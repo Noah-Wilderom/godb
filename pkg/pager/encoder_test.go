@@ -546,7 +546,7 @@ func TestHeaderWithInvalidFieldsReturnsError(t *testing.T) {
 		change func(*DatabaseHeader)
 	}{
 		{name: "ZeroVersion", change: func(h *DatabaseHeader) { h.FormatVersion = 0 }},
-		{name: "FutureVersion", change: func(h *DatabaseHeader) { h.FormatVersion = 2 }},
+		{name: "FutureVersion", change: func(h *DatabaseHeader) { h.FormatVersion = 3 }},
 		{name: "ZeroPageSize", change: func(h *DatabaseHeader) { h.PageSize = 0 }},
 		{name: "UnsupportedPageSize", change: func(h *DatabaseHeader) { h.PageSize = 8192 }},
 		{name: "ZeroPageCount", change: func(h *DatabaseHeader) { h.PageCount = 0 }},
@@ -561,6 +561,8 @@ func TestHeaderWithInvalidFieldsReturnsError(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			header := NewDatabaseHeader()
+			validPage, err := EncodeHeader(header)
+			require.NoError(t, err)
 			tc.change(header)
 
 			t.Run("Encode", func(t *testing.T) {
@@ -570,7 +572,7 @@ func TestHeaderWithInvalidFieldsReturnsError(t *testing.T) {
 			})
 			t.Run("Decode", func(t *testing.T) {
 				// Build invalid bytes directly: EncodeHeader must reject them.
-				page := knownHeaderPage()
+				page := bytes.Clone(validPage)
 				binary.LittleEndian.PutUint16(page[4:6], header.FormatVersion)
 				binary.LittleEndian.PutUint32(page[8:12], header.PageSize)
 				binary.LittleEndian.PutUint64(page[16:24], header.RootPageID)

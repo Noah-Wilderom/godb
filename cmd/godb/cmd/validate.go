@@ -9,7 +9,7 @@ import (
 var validateCmd = &cobra.Command{
 	Use:     "validate <path>",
 	Short:   "Validate a database file",
-	Long:    "Check a database file for invalid pages.",
+	Long:    "Check the reachable storage tree, schema catalog, rows, and secondary indexes. Stop writers before validating the file.",
 	Example: "  godb database validate ./example.db",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runDatabaseValidate,

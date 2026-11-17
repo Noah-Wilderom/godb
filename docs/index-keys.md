@@ -2,6 +2,11 @@
 
 `schema.EncodePrimaryKey(table, value)` validates the table and the supplied primary-key value, then produces a key for the existing byte-sorted B+tree. It takes a single value so lookups do not require constructing an entire row. Row insertion must separately validate and encode the row.
 
+`schema.DecodeIndexKeyHeader(encoded)` returns the table and index IDs after
+checking the nine-byte header, key format version, and nonzero table ID. It accepts
+header-only prefixes and does not validate the remaining key components. Full
+database validation derives each stored key from its row to verify those bytes.
+
 | Field | Bytes | Encoding |
 | --- | --- | --- |
 | Key format version | 1 | Currently 1 |
@@ -56,16 +61,50 @@ The primary-key suffix breaks ties between equal indexed values and allows multi
 
 Every entry's `Value` is the full encoded primary key, including its table ID and primary index ID. A future lookup can pass it directly to the underlying database `Get`. Key and value buffers are independently owned; encoding does not change the row or schema. `RequiresUniqueCheck` is returned control metadata, not a byte stored in the key or value.
 
-When `RequiresUniqueCheck` is true, the future serialized write path must reject an existing entry pointing to a different primary key. An existing entry for the same primary key can be treated as an update or replay. Blindly passing these entries to the current `Put` or `PutBatch` would overwrite conflicts, so it is not a uniqueness implementation.
+When `RequiresUniqueCheck` is true, `db.InsertRow` checks the key inside the serialized writer and rejects an existing entry pointing to a different primary key. An existing secondary entry pointing to the same primary key is allowed, but an existing primary row always rejects the insert. `InsertRow` is not an upsert or an idempotent replay API. Blindly passing these entries to `Put` or `PutBatch` would overwrite conflicts and bypass uniqueness enforcement.
 
 Changing indexed column order, types, null rules, or the `Unique` setting requires rebuilding affected index entries; changing only a name does not change the encoded bytes. Schema persistence and index rebuilds are still pending.
 
+## Unique-index lookups
+
+`schema.EncodeUniqueIndexKey(table, indexID, values...)` builds the lookup key without requiring a full row or a known primary key. Supply exactly one value for each declared index column, in `ColumnIDs` order, with matching types. The index must be unique, and every lookup value must be non-null. Unknown IDs, index ID 0, non-unique indexes, wrong counts or types, and null-containing tuples are rejected. A tuple containing null can identify multiple rows and uses the scan API.
+
+`db.GetRowByUniqueIndex(table, indexID, values...)` returns `(row, true, nil)` on a match or `(nil, false, nil)` when the index key is absent. It requires a matching persisted table definition and holds one read lock across catalog verification, the index lookup, and the referenced primary-row lookup, then decodes the copied bytes outside the lock. The returned row must match both its primary-key reference and the requested index key. Dangling references, malformed rows, and stale or mismatched entries return an error with no row, rather than silently appearing absent or returning a different row.
+
+These methods support exact-match lookups only. Non-unique matches, null tuples, and partial composite keys use scans.
+
+## Index-prefix scans
+
+`schema.EncodeIndexPrefix(table, indexID, values...)` accepts zero to all leading index-column values for either a unique or non-unique secondary index. Every supplied value must match the declared column type; null is accepted only for nullable columns. With no values it returns the version/table/index namespace. With values it appends their complete ordered components, without a primary-key suffix.
+
+`db.ScanRowsByIndex(table, indexID, limit, values...)` scans from this prefix inclusively to its byte-wise successor exclusively. The successor increments the last non-`ff` byte and truncates subsequent bytes, so a scan cannot leak into a neighboring index or table, even when an index ID ends in `ff`. Escaped text/bytes components include their terminator: matching text `a` does not also match `ab`.
+
+Scans return ascending rows, validate their full index entries against stored references, and accept a limit of 1 through `database.MaxScanEntries`. A complete non-null unique tuple returns at most one row; non-unique tuples or tuples containing null can return several. A shorter value list matches a composite-key prefix. Descending order and string-prefix predicates are not implemented. Typed inequality bounds use `ScanRowsByIndexRangePage`, described below. See [bounded scan behavior](storage-concurrency.md#bounded-scans).
+
+`db.ScanRowsByIndexPage(table, indexID, limit, cursor, values...)` provides continuation through `RowPage.Next`. Pass nil for the first page and stop when `Next` is nil. It resumes after the full index entry key, preserving duplicate-value rows and null tuples. Cursors are local to one handle and compatible query/schema; each page is consistent, but there is no shared snapshot across pages. See [pagination semantics](storage-concurrency.md#paginated-scans).
+
 ## Secondary-index work still to implement
 
-- Persistence of index definitions in the table catalog.
-- Uniqueness checks inside the serialized write path and storage of generated entries.
+- Schema alteration and building new indexes over existing rows.
 - Additional collation choices and descending-order support.
-- Index scans, backfill, and removal of stale entries on row updates or deletion.
-- Atomic maintenance of row and index entries, including crash recovery. Current write batching does not provide this guarantee.
+- Historical snapshots and finer conflict detection. [Transactions](transactions.md) support reads and atomic row/index changes with database-wide revision checks.
 
 For future Raft replication, index entries must be derived deterministically from the committed row mutation and schema. Replicas must not independently choose index IDs or other schema identifiers. Ordered key encoding alone does not implement replication or sharding.
+
+`DeleteRow` derives keys from the current stored row and verifies all expected
+index references before removing them through the serialized writer. Successful
+deletion releases unique values for later inserts. See [deletion](deletion.md).
+
+`UpdateRow` preserves unchanged index entries, removes changed old keys, and
+checks new unique keys before storing the replacement row. See [updates](updates.md).
+
+## Typed secondary ranges
+
+`db.ScanRowsByIndexRangePage(table, indexID, lower, upper, limit, cursor, values...)`
+binds a leading prefix, then ranges over the next index column. NULLs in the ranged
+column are excluded. Inclusive lower/exclusive upper bounds use the encoded
+component prefix itself. Exclusive lower/inclusive upper bounds use its prefix
+successor, skipping/including all trailing components and duplicate primary-key
+suffixes at that value. This differs from primary ranges, where the boundary is a
+complete key. Both forms preserve the existing format. See
+[secondary-index range scans](sql.md#secondary-index-range-scans) for constraints.
